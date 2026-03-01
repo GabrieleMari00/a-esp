@@ -70,9 +70,10 @@ const getRiskColor = (risk) => {
 const getCategoryInfo = (code) => CATEGORIES.find(c => c.code === code) || CATEGORIES[12];
 
 const channelBadge = {
-  PEC:   { color: "#E02834", bg: "rgba(224,40,52,0.12)" },
-  EMAIL: { color: "#7A1418", bg: "rgba(122,20,24,0.10)" },
-  REM:   { color: "#4A0C10", bg: "rgba(74,12,16,0.10)" },
+  PEC:    { color: "#E02834", bg: "rgba(224,40,52,0.12)" },
+  EMAIL:  { color: "#7A1418", bg: "rgba(122,20,24,0.10)" },
+  REM:    { color: "#4A0C10", bg: "rgba(74,12,16,0.10)" },
+  LOCALE: { color: "#4A7C59", bg: "rgba(74,124,89,0.12)" },
 };
 
 /* ─────────────────────────────────────────────
@@ -291,7 +292,7 @@ const STYLES = `
   .doc-table { width: 100%; border-collapse: collapse; }
   .doc-table th {
     text-align: left; font-size: 10.5px; font-weight: 600; color: var(--text3);
-    text-transform: uppercase; letter-spacing: 0.8px; padding: 0 12px 8px; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: 0.8px; padding: 14px 12px 8px; white-space: nowrap;
   }
   .doc-row {
     border-top: 1px solid var(--border); transition: background 0.1s; cursor: pointer;
@@ -1429,11 +1430,12 @@ const Inbox = ({ onDocClick }) => {
 /* ─────────────────────────────────────────────
    CATEGORY LANDING
 ───────────────────────────────────────────── */
-const CategoryLanding = ({ cat, onBack, onDocClick }) => {
+const CategoryLanding = ({ cat, onBack, onDocClick, allDocs = MOCK_DOCS, onRemove }) => {
   const [docs, setDocs] = useState(
-    MOCK_DOCS.filter(d => d.category === cat.code).map(d => ({ ...d }))
+    allDocs.filter(d => d.category === cat.code).map(d => ({ ...d }))
   );
-  const [activeTab, setActiveTab] = useState("unmanaged");
+  const [activeTab, setActiveTab]       = useState("unmanaged");
+  const [confirmRemove, setConfirmRemove] = useState(null); // doc id pending confirm
 
   const managed   = docs.filter(d =>  d.managed);
   const unmanaged = docs.filter(d => !d.managed);
@@ -1442,10 +1444,18 @@ const CategoryLanding = ({ cat, onBack, onDocClick }) => {
     setDocs(prev => prev.map(d => d.id === id ? { ...d, managed: !d.managed } : d));
   };
 
+  const removeDoc = (id) => {
+    setDocs(prev => prev.filter(d => d.id !== id));
+    if (onRemove) onRemove(id);
+    setConfirmRemove(null);
+  };
+
   const pct = docs.length > 0 ? Math.round((managed.length / docs.length) * 100) : 0;
   const visibleDocs = activeTab === "unmanaged" ? unmanaged : managed;
 
-  const DocRow = ({ doc }) => (
+  const DocRow = ({ doc }) => {
+    const isConfirming = confirmRemove === doc.id;
+    return (
     <div className="cat-doc-row">
       <div
         className="cat-doc-status"
@@ -1482,9 +1492,35 @@ const CategoryLanding = ({ cat, onBack, onDocClick }) => {
         >
           {doc.managed ? "Riapri pratica" : "Segna come gestita"}
         </button>
+
+        {/* Remove button */}
+        {!isConfirming ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirmRemove(doc.id); }}
+            title="Rimuovi dal cassetto"
+            style={{ background:"none", border:"1px solid var(--border)", borderRadius:6,
+              color:"var(--text3)", fontSize:14, cursor:"pointer", padding:"3px 8px",
+              lineHeight:1, transition:"all 0.13s", marginTop:4 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#E02834"; e.currentTarget.style.color="#E02834"; e.currentTarget.style.background="rgba(224,40,52,0.07)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="var(--border)"; e.currentTarget.style.color="var(--text3)"; e.currentTarget.style.background="none"; }}
+          >🗑</button>
+        ) : (
+          <div style={{ display:"flex", gap:5, marginTop:4 }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => removeDoc(doc.id)}
+              style={{ padding:"3px 10px", borderRadius:6, border:"none", background:"#E02834",
+                color:"#FEFAEF", fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"var(--font)" }}>
+              Rimuovi
+            </button>
+            <button onClick={() => setConfirmRemove(null)}
+              style={{ padding:"3px 8px", borderRadius:6, border:"1px solid var(--border)",
+                background:"none", color:"var(--text2)", fontSize:11.5, cursor:"pointer", fontFamily:"var(--font)" }}>
+              Annulla
+            </button>
+          </div>
+        )}
       </div>
     </div>
-  );
+  );};
 
   return (
     <div className="fade-in">
@@ -1588,13 +1624,245 @@ const CategoryLanding = ({ cat, onBack, onDocClick }) => {
 };
 
 /* ─── ARCHIVE ─── */
+/* ── AI category guesser based on filename keywords ── */
+const guessCategory = (filename) => {
+  const n = filename.toLowerCase();
+  if (/multa|sanzione|cartella|ingiunz/.test(n))   return "C02";
+  if (/fattura|f24|ricevuta|invoice/.test(n))       return "C04";
+  if (/contratto|accordo|polizza/.test(n))          return "C05";
+  if (/avviso|pagamento|bolletta/.test(n))          return "C01";
+  if (/atto|ordinanza|pec|tribunale|ade/.test(n))   return "C03";
+  if (/scadenza|rinnovo|abbonamento/.test(n))       return "C06";
+  if (/certificato|documento|carta|passaporto/.test(n)) return "C11";
+  if (/appuntamento|convocazione|assemblea/.test(n))  return "C09";
+  if (/richiesta|integrare|completare/.test(n))    return "C07";
+  if (/lavoro|cliente|fornitore|preventivo/.test(n))  return "C12";
+  // default: pick semi-randomly from C01–C12
+  const fallbacks = ["C01","C03","C04","C05","C07","C11"];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+};
+
+const UploadModal = ({ onClose, onConfirm }) => {
+  const [step, setStep]         = useState("pick");   // pick | analyzing | result
+  const [file, setFile]         = useState(null);
+  const [isDrag, setIsDrag]     = useState(false);
+  const [detectedCat, setDetectedCat] = useState(null);
+  const [chosenCat, setChosenCat]     = useState(null);
+  const [progress, setProgress]       = useState(0);
+  const fileRef = useRef(null);
+
+  const handleFile = (f) => {
+    if (!f) return;
+    setFile(f);
+    setStep("analyzing");
+    setProgress(0);
+    // simulate progressive AI analysis
+    let p = 0;
+    const iv = setInterval(() => {
+      p += Math.random() * 18 + 6;
+      if (p >= 100) { p = 100; clearInterval(iv); }
+      setProgress(Math.min(Math.round(p), 100));
+    }, 120);
+    setTimeout(() => {
+      clearInterval(iv);
+      setProgress(100);
+      const cat = guessCategory(f.name);
+      setDetectedCat(cat);
+      setChosenCat(cat);
+      setStep("result");
+    }, 2200);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setIsDrag(false);
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  };
+
+  const confirm = () => {
+    const today = new Date().toISOString().split("T")[0];
+    onConfirm({
+      id: Date.now(),
+      channel: "LOCALE",
+      from: "Caricamento manuale",
+      subject: file.name.replace(/\.[^.]+$/, ""),
+      date: today,
+      category: chosenCat,
+      read: true,
+      urgent: false,
+      amount: null,
+      deadline: null,
+      managed: false,
+      localFile: true,
+    });
+    onClose();
+  };
+
+  const catInfo = chosenCat ? getCategoryInfo(chosenCat) : null;
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(20,4,6,0.5)", zIndex:300,
+      display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={step === "analyzing" ? undefined : onClose}>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:18,
+        padding:"30px 28px 26px", width:440, boxShadow:"0 20px 56px rgba(224,40,52,0.18)" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* ── HEADER ── */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:22 }}>
+          <div style={{ width:42, height:42, borderRadius:11, background:"var(--red-soft)",
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>📂</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>Carica documento locale</div>
+            <div style={{ fontSize:11.5, color:"var(--text3)", marginTop:2 }}>
+              {step === "pick"      && "Trascina o seleziona un file da archiviare"}
+              {step === "analyzing" && "L'agente IA sta analizzando il documento…"}
+              {step === "result"    && "Classificazione completata — conferma o modifica"}
+            </div>
+          </div>
+          {step !== "analyzing" && (
+            <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer",
+              color:"var(--text3)", fontSize:22, lineHeight:1, padding:4 }}>×</button>
+          )}
+        </div>
+
+        {/* ── STEP: PICK ── */}
+        {step === "pick" && (
+          <>
+            <div
+              onDragOver={e => { e.preventDefault(); setIsDrag(true); }}
+              onDragLeave={() => setIsDrag(false)}
+              onDrop={handleDrop}
+              onClick={() => fileRef.current.click()}
+              style={{ border:`2px dashed ${isDrag ? "var(--red)" : "var(--border)"}`,
+                borderRadius:12, padding:"32px 20px", textAlign:"center", cursor:"pointer",
+                background: isDrag ? "var(--red-soft)" : "var(--surface)",
+                transition:"all 0.15s", marginBottom:16 }}>
+              <div style={{ fontSize:36, marginBottom:10 }}>📎</div>
+              <div style={{ fontSize:13.5, fontWeight:600, color:"var(--text)", marginBottom:4 }}>
+                Trascina qui il tuo file
+              </div>
+              <div style={{ fontSize:11.5, color:"var(--text3)" }}>oppure clicca per sfogliare</div>
+              <div style={{ fontSize:11, color:"var(--text3)", marginTop:8 }}>
+                PDF, immagini, Word, Excel, testo…
+              </div>
+              <input ref={fileRef} type="file" style={{ display:"none" }}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.eml"
+                onChange={e => handleFile(e.target.files[0])} />
+            </div>
+            <button onClick={onClose}
+              style={{ width:"100%", padding:"9px", borderRadius:8, border:"1px solid var(--border)",
+                background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                cursor:"pointer", fontFamily:"var(--font)" }}>Annulla</button>
+          </>
+        )}
+
+        {/* ── STEP: ANALYZING ── */}
+        {step === "analyzing" && (
+          <div style={{ textAlign:"center", padding:"10px 0 16px" }}>
+            <div style={{ fontSize:13, color:"var(--text2)", marginBottom:6 }}>
+              <strong style={{ color:"var(--text)" }}>{file?.name}</strong>
+            </div>
+            <div style={{ display:"flex", gap:10, alignItems:"center", margin:"22px 0 10px",
+              background:"var(--surface)", borderRadius:10, padding:"14px 16px" }}>
+              <div style={{ fontSize:22 }}>🤖</div>
+              <div style={{ flex:1, textAlign:"left" }}>
+                {[
+                  progress < 30  && "Lettura del documento…",
+                  progress >= 30 && progress < 65  && "Estrazione testo e metadati…",
+                  progress >= 65 && progress < 90  && "Identificazione categoria…",
+                  progress >= 90 && "Assegnazione al cassetto…",
+                ].filter(Boolean)[0]}
+              </div>
+              <div style={{ fontFamily:"var(--mono)", fontSize:13, color:"var(--red)", fontWeight:700 }}>
+                {progress}%
+              </div>
+            </div>
+            <div style={{ background:"var(--red-pale)", borderRadius:8, height:8, overflow:"hidden" }}>
+              <div style={{ height:"100%", background:"var(--red)", borderRadius:8,
+                width:`${progress}%`, transition:"width 0.12s linear" }} />
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: RESULT ── */}
+        {step === "result" && catInfo && (
+          <>
+            <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
+              borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
+              <div style={{ fontSize:11.5, color:"var(--text3)", marginBottom:6 }}>File caricato</div>
+              <div style={{ fontSize:13, fontWeight:600, color:"var(--text)", display:"flex", gap:8, alignItems:"center" }}>
+                <span style={{ fontSize:16 }}>📄</span>
+                {file?.name}
+                <span style={{ fontSize:11, color:"var(--text3)", fontFamily:"var(--mono)", marginLeft:"auto" }}>
+                  {file ? (file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+"MB" : Math.round(file.size/1024)+"KB") : ""}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:"var(--text2)", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+                🤖 Categoria rilevata dall'agente IA
+                <span style={{ fontSize:10.5, color:"var(--red)", background:"var(--red-soft)",
+                  padding:"1px 7px", borderRadius:10, fontWeight:700 }}>
+                  {detectedCat === chosenCat ? "automatica" : "modificata"}
+                </span>
+              </div>
+              <select value={chosenCat} onChange={e => setChosenCat(e.target.value)}
+                style={{ width:"100%", padding:"10px 12px", borderRadius:8,
+                  border:`2px solid ${catInfo.color}`, background:"var(--surface)",
+                  color:"var(--text)", fontSize:13.5, fontFamily:"var(--font)",
+                  fontWeight:600, outline:"none", cursor:"pointer" }}>
+                {CATEGORIES.filter(c => c.code !== "C13" && c.code !== "C14").map(c => (
+                  <option key={c.code} value={c.code}>{c.code} — {c.label}</option>
+                ))}
+              </select>
+              <div style={{ marginTop:8, display:"flex", gap:8, alignItems:"center" }}>
+                <span style={{ fontSize:11.5, fontWeight:600, color:catInfo.color,
+                  background:`${catInfo.color}18`, padding:"3px 9px", borderRadius:8 }}>
+                  Rischio: {catInfo.risk}
+                </span>
+                {detectedCat === chosenCat && (
+                  <span style={{ fontSize:11, color:"var(--text3)" }}>Modifica se la categoria non è corretta</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={onClose}
+                style={{ flex:1, padding:"10px", borderRadius:8, border:"1px solid var(--border)",
+                  background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)" }}>Annulla</button>
+              <button onClick={confirm}
+                style={{ flex:2, padding:"10px", borderRadius:8, border:"none", background:"var(--red)",
+                  color:"#FEFAEF", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"var(--font)" }}>
+                ✓ Archivia nel cassetto
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Archive = ({ onDocClick }) => {
   const [selectedCat, setSelectedCat] = useState(null);
+  const [docs, setDocs]               = useState(MOCK_DOCS);
+  const [showUpload, setShowUpload]   = useState(false);
+  const [justAdded, setJustAdded]     = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null); // id of last added doc
+
+  const handleUploadConfirm = (newDoc) => {
+    setDocs(prev => [newDoc, ...prev]);
+    setJustAdded(newDoc.id);
+    setTimeout(() => setJustAdded(null), 3000);
+  };
 
   const catCounts    = {};
   const catManaged   = {};
   const catUnmanaged = {};
-  MOCK_DOCS.forEach(d => {
+  docs.forEach(d => {
     catCounts[d.category]    = (catCounts[d.category] || 0) + 1;
     if (d.managed) catManaged[d.category]   = (catManaged[d.category] || 0) + 1;
     else           catUnmanaged[d.category] = (catUnmanaged[d.category] || 0) + 1;
@@ -1606,19 +1874,44 @@ const Archive = ({ onDocClick }) => {
         cat={selectedCat}
         onBack={() => setSelectedCat(null)}
         onDocClick={onDocClick}
+        allDocs={docs}
+        onRemove={(id) => setDocs(prev => prev.filter(d => d.id !== id))}
       />
     );
   }
 
   return (
     <div className="fade-in">
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onConfirm={handleUploadConfirm} />}
+
       <div className="section-hdr">
         <div>
           <div className="section-title">Archivio Documenti</div>
-          <div className="section-sub">14 categorie • {MOCK_DOCS.length} documenti totali — clicca una categoria per i dettagli</div>
+          <div className="section-sub">14 categorie • {docs.length} documenti totali — clicca una categoria per i dettagli</div>
         </div>
-        <div className="ai-chip"><span className="ai-dot" />Classificazione automatica attiva</div>
+        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+          <div className="ai-chip"><span className="ai-dot" />Classificazione automatica attiva</div>
+          <button onClick={() => setShowUpload(true)}
+            style={{ width:34, height:34, borderRadius:"50%", border:"none",
+              background:"var(--red)", color:"#FEFAEF", fontSize:22, lineHeight:1,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              cursor:"pointer", boxShadow:"0 2px 8px rgba(224,40,52,0.35)",
+              flexShrink:0, fontWeight:300, transition:"transform 0.12s, box-shadow 0.12s" }}
+            title="Carica documento locale"
+            onMouseEnter={e => { e.currentTarget.style.transform="scale(1.10)"; e.currentTarget.style.boxShadow="0 4px 14px rgba(224,40,52,0.45)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="0 2px 8px rgba(224,40,52,0.35)"; }}>
+            +
+          </button>
+        </div>
       </div>
+
+      {justAdded && (
+        <div style={{ marginBottom:14, background:"#e8f7ee", border:"1px solid #6fcf97",
+          borderRadius:10, padding:"10px 16px", display:"flex", alignItems:"center", gap:10,
+          fontSize:13, color:"#1a7a3f", fontWeight:600, animation:"fadeIn 0.3s" }}>
+          ✓ Documento archiviato con successo dall'agente IA
+        </div>
+      )}
 
       <div className="archive-grid">
         {CATEGORIES.map(cat => {
@@ -1667,23 +1960,52 @@ const Archive = ({ onDocClick }) => {
                 <th>Categoria</th>
                 <th>Importo</th>
                 <th>Data</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {MOCK_DOCS.map(doc => {
+              {docs.map(doc => {
                 const cat = getCategoryInfo(doc.category);
+                const isConfirming = confirmRemove === doc.id;
                 return (
-                  <tr key={doc.id} className="doc-row" onClick={() => onDocClick(doc)}>
-                    <td style={{ paddingLeft: 16 }}><ChannelTag channel={doc.channel} /></td>
-                    <td>
+                  <tr key={doc.id} className="doc-row"
+                    style={ doc.id === justAdded ? { background:"#f0faf4", transition:"background 0.5s" } : {} }>
+                    <td style={{ paddingLeft: 16 }} onClick={() => onDocClick(doc)}><ChannelTag channel={doc.channel} /></td>
+                    <td onClick={() => onDocClick(doc)}>
                       <div className="subject-text">{doc.subject}</div>
                       <div className="doc-from">{doc.from}</div>
                     </td>
-                    <td>
+                    <td onClick={() => onDocClick(doc)}>
                       <span style={{ fontSize: 11, fontWeight: 600, color: cat.color, background: `${cat.color}18`, padding: "2px 7px", borderRadius: 5 }}>{cat.label}</span>
                     </td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{doc.amount || "—"}</td>
-                    <td><span className="date-text">{doc.date}</span></td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12 }} onClick={() => onDocClick(doc)}>{doc.amount || "—"}</td>
+                    <td onClick={() => onDocClick(doc)}><span className="date-text">{doc.date}</span></td>
+                    <td style={{ textAlign:"right", paddingRight:12, whiteSpace:"nowrap" }}>
+                      {!isConfirming ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmRemove(doc.id); }}
+                          title="Rimuovi documento"
+                          style={{ background:"none", border:"1px solid var(--border)", borderRadius:6,
+                            color:"var(--text3)", fontSize:13, cursor:"pointer", padding:"3px 8px", lineHeight:1, transition:"all 0.13s" }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor="#E02834"; e.currentTarget.style.color="#E02834"; e.currentTarget.style.background="rgba(224,40,52,0.07)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor="var(--border)"; e.currentTarget.style.color="var(--text3)"; e.currentTarget.style.background="none"; }}>
+                          🗑
+                        </button>
+                      ) : (
+                        <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
+                          <button onClick={(e) => { e.stopPropagation(); setDocs(prev => prev.filter(d => d.id !== doc.id)); setConfirmRemove(null); }}
+                            style={{ padding:"3px 10px", borderRadius:6, border:"none", background:"#E02834",
+                              color:"#FEFAEF", fontSize:11.5, fontWeight:700, cursor:"pointer", fontFamily:"var(--font)" }}>
+                            Rimuovi
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setConfirmRemove(null); }}
+                            style={{ padding:"3px 8px", borderRadius:6, border:"1px solid var(--border)",
+                              background:"none", color:"var(--text2)", fontSize:11.5, cursor:"pointer", fontFamily:"var(--font)" }}>
+                            Annulla
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
