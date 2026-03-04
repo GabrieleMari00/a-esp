@@ -3204,9 +3204,9 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
     setSuggestionsLoading(true);
     setAiSuggestions([]);
     try {
-      const res = await fetch("/api/generate", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
@@ -3219,13 +3219,15 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
       });
       const data = await res.json();
       const text = data.content?.map(b => b.text || "").join("") || "";
-      const parsed = JSON.parse(text.trim());
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
       if (Array.isArray(parsed.keywords)) {
         const kws = parsed.keywords.slice(0, 14);
         setAiSuggestions(kws);
         setForm(f => ({ ...f, keywords: f.keywords.trim() ? f.keywords : kws.join(", ") }));
       }
     } catch(e) {
+      console.error("suggestions error", e, data);
       setAiSuggestions([]);
     } finally {
       setSuggestionsLoading(false);
@@ -3254,9 +3256,9 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
     setExamplesLoading(true);
     setAiExamples([]);
     try {
-      const res = await fetch("/api/generate", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 350,
@@ -3269,13 +3271,15 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
       });
       const data = await res.json();
       const text = data.content?.map(b => b.text || "").join("") || "";
-      const parsed = JSON.parse(text.trim());
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
       if (Array.isArray(parsed.examples)) {
         const exs = parsed.examples.slice(0, 10);
         setAiExamples(exs);
         setForm(f => ({ ...f, examples: f.examples.trim() ? f.examples : exs.join("\n") }));
       }
     } catch(e) {
+      console.error("examples error", e, data);
       setAiExamples([]);
     } finally {
       setExamplesLoading(false);
