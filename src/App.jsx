@@ -3199,16 +3199,16 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]:v })); setError(""); };
 
-  // fetch AI suggestions from Anthropic API
+  // fetch AI keyword suggestions via Anthropic API
   const fetchSuggestions = async (name, desc) => {
     setSuggestionsLoading(true);
     setAiSuggestions([]);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
           system: "Sei un assistente specializzato nella classificazione documentale italiana. Rispondi SOLO con un JSON valido, senza markdown, senza backtick, senza testo aggiuntivo.",
           messages: [{
@@ -3219,7 +3219,7 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
       });
       const data = await res.json();
       const text = data.content?.map(b => b.text || "").join("") || "";
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      const parsed = JSON.parse(text.trim());
       if (Array.isArray(parsed.keywords)) {
         const kws = parsed.keywords.slice(0, 14);
         setAiSuggestions(kws);
@@ -3254,11 +3254,11 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
     setExamplesLoading(true);
     setAiExamples([]);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 350,
           system: "Sei un assistente specializzato nella classificazione documentale italiana. Rispondi SOLO con un JSON valido, senza markdown, senza backtick, senza testo aggiuntivo.",
           messages: [{
@@ -3269,7 +3269,7 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
       });
       const data = await res.json();
       const text = data.content?.map(b => b.text || "").join("") || "";
-      const parsed = JSON.parse(text.replace(/\`\`\`json|\`\`\`/g,"").trim());
+      const parsed = JSON.parse(text.trim());
       if (Array.isArray(parsed.examples)) {
         const exs = parsed.examples.slice(0, 10);
         setAiExamples(exs);
