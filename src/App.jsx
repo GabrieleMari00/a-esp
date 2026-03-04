@@ -67,7 +67,7 @@ const getRiskColor = (risk) => {
   return "#C09098";
 };
 
-const getCategoryInfo = (code) => CATEGORIES.find(c => c.code === code) || CATEGORIES[12];
+const getCategoryInfo = (code, customCats = []) => CATEGORIES.find(c => c.code === code) || customCats.find(c => c.code === code) || CATEGORIES[12];
 
 const channelBadge = {
   PEC:    { color: "#E02834", bg: "rgba(224,40,52,0.12)" },
@@ -238,13 +238,50 @@ const STYLES = `
   .search-box {
     display: flex; align-items: center; gap: 8px;
     background: var(--surface); border: 1px solid var(--border2); border-radius: 8px;
-    padding: 7px 12px; width: 260px;
+    padding: 7px 12px; width: 260px; position: relative;
   }
   .search-box input {
     background: none; border: none; outline: none; color: var(--text);
     font-family: var(--font); font-size: 13px; width: 100%;
   }
   .search-box input::placeholder { color: var(--text3); }
+  .search-box.open { border-color: var(--red); box-shadow: 0 0 0 3px rgba(224,40,52,0.10); border-radius: 8px 8px 0 0; }
+  .search-dropdown {
+    position: absolute; top: 100%; left: -1px; right: -1px;
+    background: var(--card); border: 1px solid var(--red);
+    border-top: none; border-radius: 0 0 10px 10px;
+    box-shadow: 0 8px 28px rgba(20,4,6,0.18);
+    z-index: 200; overflow: hidden; max-height: 340px; overflow-y: auto;
+  }
+  .search-result-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s;
+  }
+  .search-result-item:last-child { border-bottom: none; }
+  .search-result-item:hover { background: var(--red-soft); }
+  .search-result-subject { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .search-result-from { font-size: 11px; color: var(--text3); margin-top: 1px; }
+  .search-highlight { color: var(--red); background: rgba(224,40,52,0.12); border-radius: 2px; padding: 0 1px; font-weight: 700; }
+  .search-empty { padding: 18px 14px; font-size: 12.5px; color: var(--text3); text-align: center; }
+  .search-scope-badge { font-size: 10px; font-weight: 700; color: var(--red); background: var(--red-soft); border-radius: 6px; padding: 1px 7px; white-space: nowrap; flex-shrink: 0; }
+  .cat-search-wrap {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 14px; position: relative;
+  }
+  .cat-search-wrap input {
+    background: none; border: none; outline: none; color: var(--text);
+    font-family: var(--font); font-size: 13px; width: 100%;
+  }
+  .cat-search-wrap input::placeholder { color: var(--text3); }
+  .cat-search-wrap.open { border-color: var(--red); box-shadow: 0 0 0 3px rgba(224,40,52,0.10); border-radius: 8px 8px 0 0; }
+  .cat-search-dropdown {
+    position: absolute; top: 100%; left: -1px; right: -1px;
+    background: var(--card); border: 1px solid var(--red);
+    border-top: none; border-radius: 0 0 10px 10px;
+    box-shadow: 0 8px 28px rgba(20,4,6,0.18);
+    z-index: 200; overflow: hidden;
+  }
   .icon-btn {
     width: 34px; height: 34px; border-radius: 8px; background: var(--surface);
     border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
@@ -377,6 +414,8 @@ const STYLES = `
     padding: 16px; cursor: pointer; transition: all 0.15s;
   }
   .archive-card:hover { border-color: var(--red); background: var(--red-soft); }
+  .archive-card:hover .cat-delete-btn { opacity: 1 !important; }
+  .cat-delete-btn:hover { background: rgba(224,40,52,0.12) !important; border-color: var(--red) !important; color: var(--red) !important; }
   .archive-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
   .archive-card-count { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
   .archive-card-label { font-size: 12px; color: var(--text2); line-height: 1.3; }
@@ -1570,6 +1609,9 @@ const CategoryLanding = ({ cat, onBack, onDocClick, allDocs = MOCK_DOCS, onRemov
         </button>
       </div>
 
+      {/* CASSETTO SEARCH */}
+      <CatSearch docs={docs} onSelect={onDocClick} />
+
       {/* TAB BUTTONS */}
       <div style={{ display:"flex", gap:10, marginBottom:16 }}>
         {[
@@ -1625,8 +1667,12 @@ const CategoryLanding = ({ cat, onBack, onDocClick, allDocs = MOCK_DOCS, onRemov
 
 /* ─── ARCHIVE ─── */
 /* ── AI category guesser based on filename keywords ── */
-const guessCategory = (filename) => {
+const guessCategory = (filename, customCats = []) => {
   const n = filename.toLowerCase();
+  // check custom categories first (user-defined keywords take priority)
+  for (const cat of customCats) {
+    if (cat.keywords && cat.keywords.some(k => k && n.includes(k))) return cat.code;
+  }
   if (/multa|sanzione|cartella|ingiunz/.test(n))   return "C02";
   if (/fattura|f24|ricevuta|invoice/.test(n))       return "C04";
   if (/contratto|accordo|polizza/.test(n))          return "C05";
@@ -1642,7 +1688,7 @@ const guessCategory = (filename) => {
   return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 };
 
-const UploadModal = ({ onClose, onConfirm }) => {
+const UploadModal = ({ onClose, onConfirm, customCats = [], allCategories = CATEGORIES }) => {
   const [step, setStep]         = useState("pick");   // pick | analyzing | result
   const [file, setFile]         = useState(null);
   const [isDrag, setIsDrag]     = useState(false);
@@ -1666,7 +1712,7 @@ const UploadModal = ({ onClose, onConfirm }) => {
     setTimeout(() => {
       clearInterval(iv);
       setProgress(100);
-      const cat = guessCategory(f.name);
+      const cat = guessCategory(f.name, customCats);
       setDetectedCat(cat);
       setChosenCat(cat);
       setStep("result");
@@ -1813,7 +1859,7 @@ const UploadModal = ({ onClose, onConfirm }) => {
                   border:`2px solid ${catInfo.color}`, background:"var(--surface)",
                   color:"var(--text)", fontSize:13.5, fontFamily:"var(--font)",
                   fontWeight:600, outline:"none", cursor:"pointer" }}>
-                {CATEGORIES.filter(c => c.code !== "C13" && c.code !== "C14").map(c => (
+                {CATEGORIES.filter(c => c.code !== "C13" && c.code !== "C14").concat(allCategories.filter(c => c.custom)).map(c => (
                   <option key={c.code} value={c.code}>{c.code} — {c.label}</option>
                 ))}
               </select>
@@ -1846,17 +1892,83 @@ const UploadModal = ({ onClose, onConfirm }) => {
   );
 };
 
-const Archive = ({ onDocClick }) => {
-  const [selectedCat, setSelectedCat] = useState(null);
-  const [docs, setDocs]               = useState(MOCK_DOCS);
-  const [showUpload, setShowUpload]   = useState(false);
-  const [justAdded, setJustAdded]     = useState(null);
-  const [confirmRemove, setConfirmRemove] = useState(null); // id of last added doc
+const Archive = ({ onDocClick, allDocs = MOCK_DOCS, setAllDocs }) => {
+  const [selectedCat, setSelectedCat]     = useState(null);
+  const docs    = allDocs;
+  const setDocs = setAllDocs || (() => {});
+  const [showUpload, setShowUpload]       = useState(false);
+  const [showWizard, setShowWizard]       = useState(false);
+  const [customCats, setCustomCats]       = useState([]);
+  const [hiddenCats, setHiddenCats]       = useState([]);       // built-in cats hidden by user
+  const [confirmDeleteCat, setConfirmDeleteCat] = useState(null); // cat.code pending deletion
+  const [justAdded, setJustAdded]         = useState(null);
+  const [justAddedCat, setJustAddedCat]   = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+
+  const allCategories = [...CATEGORIES, ...customCats].filter(c => !hiddenCats.includes(c.code));
+
+  // Duplicate detection state: { incoming, existing }
+  const [dupAlert, setDupAlert] = useState(null);
+
+  // Similarity check: same subject (fuzzy) or same amount+from+category within 30 days
+  const findDuplicate = (newDoc) => {
+    const normalize = s => s.toLowerCase().replace(/\s+/g, " ").trim();
+    const newNorm   = normalize(newDoc.subject);
+    return docs.find(d => {
+      // exact subject match
+      if (normalize(d.subject) === newNorm) return true;
+      // same sender + same amount + same category within 30 days
+      if (newDoc.from && d.from &&
+          newDoc.from === d.from &&
+          newDoc.amount && d.amount && newDoc.amount === d.amount &&
+          newDoc.category === d.category) {
+        const daysDiff = Math.abs(new Date(newDoc.date) - new Date(d.date)) / 86400000;
+        if (daysDiff <= 30) return true;
+      }
+      return false;
+    }) || null;
+  };
 
   const handleUploadConfirm = (newDoc) => {
-    setDocs(prev => [newDoc, ...prev]);
-    setJustAdded(newDoc.id);
+    const dup = findDuplicate(newDoc);
+    if (dup) {
+      setDupAlert({ incoming: newDoc, existing: dup });
+      return; // pause — wait for user decision
+    }
+    commitDoc(newDoc);
+  };
+
+  const commitDoc = (doc) => {
+    setDocs(prev => [doc, ...prev]);
+    setJustAdded(doc.id);
     setTimeout(() => setJustAdded(null), 3000);
+  };
+
+  const handleDupDecision = (action) => {
+    if (!dupAlert) return;
+    const { incoming, existing } = dupAlert;
+    if (action === "keep-both") {
+      commitDoc(incoming);
+    } else if (action === "replace") {
+      setDocs(prev => [incoming, ...prev.filter(d => d.id !== existing.id)]);
+      setJustAdded(incoming.id);
+      setTimeout(() => setJustAdded(null), 3000);
+    }
+    // "discard" → do nothing, just close
+    setDupAlert(null);
+  };
+
+  const handleDeleteCat = (catCode) => {
+    const isCustom = customCats.some(c => c.code === catCode);
+    if (isCustom) setCustomCats(prev => prev.filter(c => c.code !== catCode));
+    else          setHiddenCats(prev => [...prev, catCode]);
+    setConfirmDeleteCat(null);
+  };
+
+  const handleNewCategory = (cat) => {
+    setCustomCats(prev => [...prev, cat]);
+    setJustAddedCat(cat.code);
+    setTimeout(() => setJustAddedCat(null), 3500);
   };
 
   const catCounts    = {};
@@ -1882,12 +1994,102 @@ const Archive = ({ onDocClick }) => {
 
   return (
     <div className="fade-in">
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onConfirm={handleUploadConfirm} />}
+      {showWizard && <NewCategoryModal onClose={() => setShowWizard(false)} onConfirm={handleNewCategory} existingCodes={customCats.map(c => c.code)} />}
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onConfirm={handleUploadConfirm} customCats={customCats} allCategories={allCategories} />}
+
+      {/* ── DUPLICATE ALERT MODAL ── */}
+      {dupAlert && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(20,4,6,0.55)", zIndex:500,
+          display:"flex", alignItems:"center", justifyContent:"center" }}
+          onClick={() => setDupAlert(null)}>
+          <div style={{ background:"var(--card)", border:"2px solid var(--red)", borderRadius:18,
+            padding:"28px 26px 24px", width:460, boxShadow:"0 24px 64px rgba(224,40,52,0.25)",
+            position:"relative" }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* header */}
+            <div style={{ display:"flex", alignItems:"flex-start", gap:14, marginBottom:20 }}>
+              <div style={{ width:46, height:46, borderRadius:12, background:"rgba(224,40,52,0.12)",
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, flexShrink:0 }}>⚠️</div>
+              <div>
+                <div style={{ fontSize:15, fontWeight:800, color:"var(--text)", marginBottom:3 }}>
+                  Documento potenzialmente duplicato
+                </div>
+                <div style={{ fontSize:12.5, color:"var(--text2)", lineHeight:1.5 }}>
+                  Il documento in arrivo è simile a uno già presente in archivio. Come vuoi procedere?
+                </div>
+              </div>
+            </div>
+
+            {/* comparison cards */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
+              {[
+                { label:"Già in archivio", doc: dupAlert.existing, accent:"var(--text3)", bg:"var(--surface)" },
+                { label:"In arrivo", doc: dupAlert.incoming, accent:"var(--red)", bg:"var(--red-soft)" },
+              ].map(({ label, doc, accent, bg }) => {
+                const cat = getCategoryInfo(doc.category);
+                return (
+                  <div key={label} style={{ background:bg, border:`1px solid ${accent}30`,
+                    borderRadius:10, padding:"12px 13px" }}>
+                    <div style={{ fontSize:10, fontWeight:800, color:accent, textTransform:"uppercase",
+                      letterSpacing:"0.6px", marginBottom:8 }}>{label}</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:4,
+                      lineHeight:1.35 }}>{doc.subject}</div>
+                    <div style={{ fontSize:11, color:"var(--text3)", marginBottom:3 }}>{doc.from}</div>
+                    <div style={{ fontSize:10.5, color:"var(--text3)" }}>{doc.date}</div>
+                    <span style={{ display:"inline-block", marginTop:6, fontSize:10.5, fontWeight:600,
+                      color:cat.color, background:`${cat.color}18`, padding:"1px 7px", borderRadius:5 }}>
+                      {cat.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* actions */}
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <button onClick={() => handleDupDecision("keep-both")}
+                style={{ padding:"11px 16px", borderRadius:9, border:"1px solid var(--border)",
+                  background:"var(--surface)", color:"var(--text)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)", textAlign:"left", display:"flex",
+                  alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:18 }}>📋</span>
+                <div>
+                  <div style={{ fontWeight:700 }}>Mantieni entrambi</div>
+                  <div style={{ fontSize:11, color:"var(--text3)", fontWeight:400 }}>Archivia il nuovo documento conservando quello esistente</div>
+                </div>
+              </button>
+              <button onClick={() => handleDupDecision("replace")}
+                style={{ padding:"11px 16px", borderRadius:9, border:"1px solid rgba(224,40,52,0.3)",
+                  background:"rgba(224,40,52,0.06)", color:"var(--text)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)", textAlign:"left", display:"flex",
+                  alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:18 }}>🔄</span>
+                <div>
+                  <div style={{ fontWeight:700 }}>Sostituisci il precedente</div>
+                  <div style={{ fontSize:11, color:"var(--text3)", fontWeight:400 }}>Rimuovi la versione esistente e archivia quella nuova</div>
+                </div>
+              </button>
+              <button onClick={() => handleDupDecision("discard")}
+                style={{ padding:"11px 16px", borderRadius:9, border:"1px solid var(--border)",
+                  background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)", textAlign:"left", display:"flex",
+                  alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:18 }}>🗑️</span>
+                <div>
+                  <div style={{ fontWeight:700 }}>Scarta il nuovo</div>
+                  <div style={{ fontSize:11, color:"var(--text3)", fontWeight:400 }}>Il documento in arrivo viene ignorato, mantieni solo l'esistente</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="section-hdr">
         <div>
           <div className="section-title">Archivio Documenti</div>
-          <div className="section-sub">14 categorie • {docs.length} documenti totali — clicca una categoria per i dettagli</div>
+          <div className="section-sub">{allCategories.length} categorie • {docs.length} documenti totali — clicca una categoria per i dettagli</div>
         </div>
         <div style={{ display:"flex", gap:10, alignItems:"center" }}>
           <div className="ai-chip"><span className="ai-dot" />Classificazione automatica attiva</div>
@@ -1913,18 +2115,75 @@ const Archive = ({ onDocClick }) => {
         </div>
       )}
 
+      {justAddedCat && (
+        <div style={{ marginBottom:14, background:"var(--red-soft)", border:"1px solid var(--red)",
+          borderRadius:10, padding:"10px 16px", display:"flex", alignItems:"center", gap:10,
+          fontSize:13, color:"var(--red)", fontWeight:600 }}>
+          🗂️ Nuovo cassetto personalizzato creato — l'agente IA è pronto a classificare
+        </div>
+      )}
+
       <div className="archive-grid">
-        {CATEGORIES.map(cat => {
+        {allCategories.map(cat => {
           const count   = catCounts[cat.code]    || 0;
           const done    = catManaged[cat.code]   || 0;
           const pending = catUnmanaged[cat.code] || 0;
           const pct     = count > 0 ? Math.round((done / count) * 100) : 0;
+          const isConfirmingDelete = confirmDeleteCat === cat.code;
           return (
-            <div key={cat.code} className="archive-card" onClick={() => count > 0 && setSelectedCat(cat)}
-              style={{ cursor: count > 0 ? "pointer" : "default", opacity: count === 0 ? 0.5 : 1 }}
+            <div key={cat.code} className="archive-card"
+              onClick={() => !isConfirmingDelete && count > 0 && setSelectedCat(cat)}
+              style={{ cursor: count > 0 && !isConfirmingDelete ? "pointer" : "default",
+                opacity: count === 0 && !isConfirmingDelete ? 0.5 : 1,
+                outline: cat.code === justAddedCat ? `2px solid ${cat.color}` : "none",
+                position: "relative" }}
             >
+              {/* DELETE BUTTON — top-right, always visible */}
+              {!isConfirmingDelete && (
+                <button
+                  onClick={e => { e.stopPropagation(); setConfirmDeleteCat(cat.code); }}
+                  title="Rimuovi cassetto"
+                  style={{ position:"absolute", top:8, right:8, width:22, height:22,
+                    borderRadius:6, border:"1px solid transparent", background:"transparent",
+                    cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                    color:"var(--text3)", fontSize:13, opacity:0, transition:"opacity 0.15s",
+                    zIndex:2 }}
+                  className="cat-delete-btn"
+                >✕</button>
+              )}
+
+              {/* INLINE DELETE CONFIRM */}
+              {isConfirmingDelete && (
+                <div onClick={e => e.stopPropagation()}
+                  style={{ position:"absolute", inset:0, borderRadius:10, zIndex:10,
+                    background:"var(--card)", border:`2px solid var(--red)`,
+                    display:"flex", flexDirection:"column", alignItems:"center",
+                    justifyContent:"center", padding:"14px 12px", gap:8 }}>
+                  <div style={{ fontSize:18 }}>🗂️</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", textAlign:"center" }}>
+                    Rimuovi «{cat.label}»?
+                  </div>
+                  {count > 0 && (
+                    <div style={{ fontSize:10.5, color:"var(--red)", textAlign:"center", fontWeight:600 }}>
+                      ⚠ Contiene {count} documento{count !== 1 ? "i" : ""}
+                    </div>
+                  )}
+                  <div style={{ display:"flex", gap:6, marginTop:2 }}>
+                    <button onClick={() => setConfirmDeleteCat(null)}
+                      style={{ padding:"5px 12px", borderRadius:6, border:"1px solid var(--border)",
+                        background:"transparent", color:"var(--text2)", fontSize:11.5, fontWeight:600,
+                        cursor:"pointer", fontFamily:"var(--font)" }}>Annulla</button>
+                    <button onClick={() => handleDeleteCat(cat.code)}
+                      style={{ padding:"5px 12px", borderRadius:6, border:"none",
+                        background:"var(--red)", color:"#FEFAEF", fontSize:11.5, fontWeight:700,
+                        cursor:"pointer", fontFamily:"var(--font)" }}>Rimuovi</button>
+                  </div>
+                </div>
+              )}
+
               <div className="archive-card-top">
                 <span className="risk-pill" style={{ color: cat.color, background: `${cat.color}20` }}>{cat.risk}</span>
+                {cat.custom && <span style={{ fontSize:9.5, fontWeight:700, color:"#4A7C59", background:"rgba(74,124,89,0.12)", padding:"1px 6px", borderRadius:5 }}>custom</span>}
               </div>
               <div className="archive-card-count" style={{ color: count > 0 ? cat.color : "var(--text3)" }}>{count}</div>
               <div className="archive-card-label">{cat.label}</div>
@@ -1945,6 +2204,27 @@ const Archive = ({ onDocClick }) => {
             </div>
           );
         })}
+
+        {/* ── ADD CUSTOM CATEGORY CARD ── */}
+        <div
+          onClick={() => setShowWizard(true)}
+          style={{ border:"2px dashed var(--border)", borderRadius:10, padding:16,
+            cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center",
+            justifyContent:"center", gap:8, minHeight:120, transition:"all 0.18s",
+            background:"transparent" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor="var(--red)"; e.currentTarget.style.background="var(--red-soft)"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor="var(--border)"; e.currentTarget.style.background="transparent"; }}
+        >
+          <div style={{ width:32, height:32, borderRadius:"50%", border:"2px dashed var(--border)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:20, color:"var(--text3)", lineHeight:1 }}>+</div>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text3)", textAlign:"center", lineHeight:1.35 }}>
+            Aggiungi categoria
+          </div>
+          <div style={{ fontSize:10.5, color:"var(--text3)", textAlign:"center", lineHeight:1.4 }}>
+            Crea un cassetto personalizzato con classificazione IA
+          </div>
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
@@ -2876,13 +3156,636 @@ const CalendarPage = ({ onDocClick }) => {
 };
 
 /* ─────────────────────────────────────────────
+   NEW CATEGORY WIZARD
+───────────────────────────────────────────── */
+const RISK_OPTIONS = [
+  { value:"alto",       label:"Alto",       desc:"Conseguenze legali/economiche gravi se ignorato" },
+  { value:"medio-alto", label:"Medio-Alto", desc:"Richiede attenzione entro breve termine" },
+  { value:"medio",      label:"Medio",      desc:"Da gestire con regolarità" },
+  { value:"basso-medio",label:"Basso-Medio",desc:"Rilevante ma non urgente" },
+  { value:"basso",      label:"Basso",      desc:"Informativo, nessun obbligo diretto" },
+];
+const RISK_COLORS = {
+  "alto":"#E42733","medio-alto":"#C03040","medio":"#D06070","basso-medio":"#B07080","basso":"#C09098"
+};
+
+const WIZARD_STEPS = [
+  { id:"name",     title:"Nome della categoria",       emoji:"🏷️"  },
+  { id:"desc",     title:"Descrizione e scopo",        emoji:"📝"  },
+  { id:"keywords", title:"Parole chiave identificative",emoji:"🔑"  },
+  { id:"risk",     title:"Livello di rischio",         emoji:"⚠️"  },
+  { id:"examples", title:"Esempi di documenti",        emoji:"📄"  },
+  { id:"confirm",  title:"Riepilogo — conferma",       emoji:"✅"  },
+];
+
+const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
+  const [step,     setStep]     = useState(0);
+  const [form,     setForm]     = useState({ name:"", desc:"", keywords:"", risk:"medio", examples:"" });
+  const [error,    setError]    = useState("");
+  const [thinking, setThinking] = useState(false);
+
+  // AI keyword suggestions
+  const [aiSuggestions,     setAiSuggestions]     = useState([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [selectedChips,     setSelectedChips]     = useState(new Set());
+
+  // AI example suggestions (step 4)
+  const [aiExamples,        setAiExamples]        = useState([]);
+  const [examplesLoading,   setExamplesLoading]   = useState(false);
+  const [selectedExamples,  setSelectedExamples]  = useState(new Set());
+
+  const current = WIZARD_STEPS[step];
+  const isLast  = step === WIZARD_STEPS.length - 1;
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]:v })); setError(""); };
+
+  // fetch AI suggestions from Anthropic API
+  const fetchSuggestions = async (name, desc) => {
+    setSuggestionsLoading(true);
+    setAiSuggestions([]);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          system: "Sei un assistente specializzato nella classificazione documentale italiana. Rispondi SOLO con un JSON valido, senza markdown, senza backtick, senza testo aggiuntivo.",
+          messages: [{
+            role: "user",
+            content: `Categoria: "${name}"${desc ? `\nDescrizione: "${desc}"` : ""}\n\nGenera esattamente 14 parole chiave italiane (sostantivi o brevi frasi di 1-3 parole) utili per riconoscere automaticamente documenti di questa categoria in email, PEC e allegati. Rispondi SOLO con questo JSON: {"keywords":["kw1","kw2",...]}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.map(b => b.text || "").join("") || "";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      if (Array.isArray(parsed.keywords)) {
+        const kws = parsed.keywords.slice(0, 14);
+        setAiSuggestions(kws);
+        setForm(f => ({ ...f, keywords: f.keywords.trim() ? f.keywords : kws.join(", ") }));
+      }
+    } catch(e) {
+      setAiSuggestions([]);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  };
+
+  // toggle chip: add/remove from keywords textarea
+  const toggleChip = (kw) => {
+    const newSelected = new Set(selectedChips);
+    if (newSelected.has(kw)) {
+      newSelected.delete(kw);
+      // remove from textarea
+      const updated = form.keywords.split(/[,;\n]+/)
+        .map(k => k.trim()).filter(k => k && k !== kw).join(", ");
+      set("keywords", updated);
+    } else {
+      newSelected.add(kw);
+      // append to textarea
+      const current = form.keywords.trim();
+      set("keywords", current ? current + ", " + kw : kw);
+    }
+    setSelectedChips(newSelected);
+  };
+
+  const fetchExamples = async (name, desc, keywords) => {
+    setExamplesLoading(true);
+    setAiExamples([]);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 350,
+          system: "Sei un assistente specializzato nella classificazione documentale italiana. Rispondi SOLO con un JSON valido, senza markdown, senza backtick, senza testo aggiuntivo.",
+          messages: [{
+            role: "user",
+            content: `Categoria: "${name}"${desc ? `\nDescrizione: "${desc}"` : ""}${keywords ? `\nParole chiave: ${keywords}` : ""}\n\nGenera esattamente 10 esempi concreti e realistici di documenti italiani che appartengono a questa categoria. Ogni esempio deve essere una breve frase nominale di 4-8 parole (es. "Referto visita cardiologica del 10/01/2026"). Rispondi SOLO con: {"examples":["esempio1","esempio2",...]}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.map(b => b.text || "").join("") || "";
+      const parsed = JSON.parse(text.replace(/\`\`\`json|\`\`\`/g,"").trim());
+      if (Array.isArray(parsed.examples)) {
+        const exs = parsed.examples.slice(0, 10);
+        setAiExamples(exs);
+        setForm(f => ({ ...f, examples: f.examples.trim() ? f.examples : exs.join("\n") }));
+      }
+    } catch(e) {
+      setAiExamples([]);
+    } finally {
+      setExamplesLoading(false);
+    }
+  };
+
+  const toggleExample = (ex) => {
+    const newSelected = new Set(selectedExamples);
+    if (newSelected.has(ex)) {
+      newSelected.delete(ex);
+      const updated = form.examples.split("\n").map(k => k.trim()).filter(k => k && k !== ex).join("\n");
+      set("examples", updated);
+    } else {
+      newSelected.add(ex);
+      const cur = form.examples.trim();
+      set("examples", cur ? cur + "\n" + ex : ex);
+    }
+    setSelectedExamples(newSelected);
+  };
+
+  const validate = () => {
+    if (step === 0 && !form.name.trim())     return "Inserisci un nome per la categoria.";
+    if (step === 0 && form.name.trim().length < 3) return "Il nome deve essere di almeno 3 caratteri.";
+    if (step === 1 && !form.desc.trim())     return "Aggiungi una breve descrizione.";
+    if (step === 2 && !form.keywords.trim()) return "Inserisci almeno una parola chiave.";
+    if (step === 4 && !form.examples.trim()) return "Inserisci almeno un esempio.";
+    return "";
+  };
+
+  const next = () => {
+    const err = validate();
+    if (err) { setError(err); return; }
+    if (step < WIZARD_STEPS.length - 2) {
+      const nextStep = step + 1;
+      setStep(nextStep);
+      setError("");
+      // trigger AI suggestions when entering keywords step
+      if (nextStep === 2) fetchSuggestions(form.name, form.desc);
+      if (nextStep === 4) fetchExamples(form.name, form.desc, form.keywords);
+      return;
+    }
+    // step 4 → step 5 (confirm): simulate AI processing
+    setThinking(true);
+    setTimeout(() => { setThinking(false); setStep(5); }, 1600);
+  };
+
+  const confirm = () => {
+    const nextIdx = existingCodes.length + 1;
+    const code    = "CC" + String(nextIdx).padStart(2, "0");
+    const color   = RISK_COLORS[form.risk] || "#D06070";
+    onConfirm({
+      code,
+      label:    form.name.trim(),
+      risk:     form.risk,
+      color,
+      custom:   true,
+      keywords: form.keywords.split(/[,;\n]+/).map(k => k.trim().toLowerCase()).filter(Boolean),
+      desc:     form.desc.trim(),
+      examples: form.examples.trim(),
+    });
+    onClose();
+  };
+
+  const riskInfo = RISK_OPTIONS.find(r => r.value === form.risk);
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(20,4,6,0.52)", zIndex:400,
+      display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={onClose}>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:20,
+        padding:"30px 28px 26px", width:480, boxShadow:"0 24px 64px rgba(224,40,52,0.20)", position:"relative" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* step progress */}
+        <div style={{ display:"flex", gap:4, marginBottom:22 }}>
+          {WIZARD_STEPS.map((s,i) => (
+            <div key={s.id} style={{ flex:1, height:3, borderRadius:4,
+              background: i <= step ? "var(--red)" : "var(--border)",
+              transition:"background 0.25s" }} />
+          ))}
+        </div>
+
+        {/* header */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:22 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:"var(--red-soft)",
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>
+            {thinking ? "🤖" : current.emoji}
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"var(--red)", letterSpacing:"0.6px",
+              textTransform:"uppercase", marginBottom:2 }}>
+              Passo {step + 1} di {WIZARD_STEPS.length}
+            </div>
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--text)" }}>
+              {thinking ? "L'agente IA sta elaborando…" : current.title}
+            </div>
+          </div>
+          {!thinking && (
+            <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer",
+              color:"var(--text3)", fontSize:22, lineHeight:1, padding:4 }}>×</button>
+          )}
+        </div>
+
+        {/* ── THINKING ANIMATION ── */}
+        {thinking && (
+          <div style={{ textAlign:"center", padding:"24px 0 32px" }}>
+            <div style={{ display:"flex", justifyContent:"center", gap:8, marginBottom:18 }}>
+              {[0,1,2].map(i => (
+                <div key={i} style={{ width:10, height:10, borderRadius:"50%", background:"var(--red)",
+                  animation:`bounce 0.9s ${i*0.2}s infinite alternate`,
+                  animationTimingFunction:"ease-in-out" }} />
+              ))}
+            </div>
+            <div style={{ fontSize:13, color:"var(--text2)" }}>
+              Analisi delle parole chiave e configurazione<br />del cassetto personalizzato…
+            </div>
+            <style>{`@keyframes bounce { from{transform:translateY(0)} to{transform:translateY(-10px)} }`}</style>
+          </div>
+        )}
+
+        {/* ── STEP BODIES ── */}
+        {!thinking && step === 0 && (
+          <div>
+            <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:10 }}>
+              Dai un nome chiaro alla tua categoria. Sarà visibile nell'archivio e usato dall'agente IA per il riconoscimento automatico.
+            </div>
+            <input value={form.name} onChange={e => set("name", e.target.value)}
+              placeholder="es. Documentazione medica, Pratiche condominiali…"
+              style={{ width:"100%", padding:"11px 14px", borderRadius:9,
+                border:`1.5px solid ${error ? "#E02834" : "var(--border)"}`,
+                background:"var(--surface)", color:"var(--text)", fontSize:13.5,
+                fontFamily:"var(--font)", outline:"none", boxSizing:"border-box" }}
+              onKeyDown={e => e.key === "Enter" && next()}
+              autoFocus />
+          </div>
+        )}
+
+        {!thinking && step === 1 && (
+          <div>
+            <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:10 }}>
+              Descrivi brevemente che tipo di documenti devono finire in questo cassetto. L'agente IA userà questa descrizione per migliorare la classificazione.
+            </div>
+            <textarea value={form.desc} onChange={e => set("desc", e.target.value)}
+              placeholder="es. Documenti relativi a visite mediche, referti, prescrizioni, ricoveri e spese sanitarie personali o familiari."
+              rows={4}
+              style={{ width:"100%", padding:"11px 14px", borderRadius:9,
+                border:`1.5px solid ${error ? "#E02834" : "var(--border)"}`,
+                background:"var(--surface)", color:"var(--text)", fontSize:13,
+                fontFamily:"var(--font)", outline:"none", resize:"vertical", boxSizing:"border-box" }} />
+          </div>
+        )}
+
+        {!thinking && step === 2 && (
+          <div>
+            <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:12 }}>
+              L'agente IA ha generato le parole chiave in base al nome e alla descrizione della categoria. Modificale o aggiungine di nuove direttamente nel campo sottostante.
+            </div>
+
+            {/* LOADING STATE */}
+            {suggestionsLoading && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12,
+                padding:"10px 14px", borderRadius:8, background:"var(--red-soft)",
+                border:"1px solid rgba(224,40,52,0.2)" }}>
+                <span style={{ display:"inline-block", width:12, height:12, borderRadius:"50%",
+                  border:"2px solid var(--red)", borderTopColor:"transparent",
+                  animation:"spin 0.7s linear infinite", flexShrink:0 }} />
+                <span style={{ fontSize:12, color:"var(--red)", fontWeight:600 }}>
+                  🤖 L'agente IA sta generando le parole chiave…
+                </span>
+                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+              </div>
+            )}
+
+            {/* TEXTAREA */}
+            <textarea value={form.keywords} onChange={e => set("keywords", e.target.value)}
+              placeholder={suggestionsLoading ? "In attesa dei suggerimenti IA…" : "es. referto, visita, ricovero, prescrizione, medico, diagnosi…"}
+              rows={4}
+              style={{ width:"100%", padding:"11px 14px", borderRadius:9,
+                border:`1.5px solid ${error ? "#E02834" : "var(--border)"}`,
+                background:"var(--surface)", color:"var(--text)", fontSize:13,
+                fontFamily:"var(--font)", outline:"none", resize:"vertical", boxSizing:"border-box" }} />
+
+            {/* ACTIVE KEYWORDS PREVIEW */}
+            {form.keywords.trim() && (
+              <div style={{ marginTop:8 }}>
+                <div style={{ fontSize:10.5, color:"var(--text3)", fontWeight:700, marginBottom:5,
+                  textTransform:"uppercase", letterSpacing:"0.5px" }}>Parole chiave attive</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                  {form.keywords.split(/[,;\n]+/).filter(k => k.trim()).map((k,i) => (
+                    <span key={i} style={{ fontSize:11, background:"var(--red-soft)", color:"var(--red)",
+                      padding:"3px 10px", borderRadius:10, fontWeight:600 }}>{k.trim()}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!thinking && step === 3 && (
+          <div>
+            <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:12 }}>
+              Seleziona il livello di rischio associato a questa categoria. Determina la priorità degli avvisi generati dall'agente IA.
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {RISK_OPTIONS.map(opt => (
+                <div key={opt.value}
+                  onClick={() => set("risk", opt.value)}
+                  style={{ padding:"11px 14px", borderRadius:9, cursor:"pointer",
+                    border:`2px solid ${form.risk === opt.value ? RISK_COLORS[opt.value] : "var(--border)"}`,
+                    background: form.risk === opt.value ? `${RISK_COLORS[opt.value]}12` : "var(--surface)",
+                    transition:"all 0.14s", display:"flex", alignItems:"center", gap:12 }}>
+                  <div style={{ width:10, height:10, borderRadius:"50%", flexShrink:0,
+                    background: form.risk === opt.value ? RISK_COLORS[opt.value] : "var(--border)" }} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:700,
+                      color: form.risk === opt.value ? RISK_COLORS[opt.value] : "var(--text)" }}>{opt.label}</div>
+                    <div style={{ fontSize:11, color:"var(--text3)", marginTop:1 }}>{opt.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!thinking && step === 4 && (
+          <div>
+            <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:12 }}>
+              L'agente IA ha generato esempi concreti di documenti per questa categoria. Modificali o aggiungine di nuovi direttamente nel campo sottostante.
+            </div>
+
+            {/* LOADING STATE */}
+            {examplesLoading && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12,
+                padding:"10px 14px", borderRadius:8, background:"var(--red-soft)",
+                border:"1px solid rgba(224,40,52,0.2)" }}>
+                <span style={{ display:"inline-block", width:12, height:12, borderRadius:"50%",
+                  border:"2px solid var(--red)", borderTopColor:"transparent",
+                  animation:"spin 0.7s linear infinite", flexShrink:0 }} />
+                <span style={{ fontSize:12, color:"var(--red)", fontWeight:600 }}>
+                  🤖 L'agente IA sta generando gli esempi…
+                </span>
+              </div>
+            )}
+
+            {/* TEXTAREA */}
+            <textarea value={form.examples} onChange={e => set("examples", e.target.value)}
+              placeholder={examplesLoading ? "In attesa dei suggerimenti IA…" : "es. Referto visita cardiologica del 10/01/2026"}
+              rows={6}
+              style={{ width:"100%", padding:"11px 14px", borderRadius:9,
+                border:`1.5px solid ${error ? "#E02834" : "var(--border)"}`,
+                background:"var(--surface)", color:"var(--text)", fontSize:13,
+                fontFamily:"var(--font)", outline:"none", resize:"vertical", boxSizing:"border-box" }} />
+          </div>
+        )}
+
+        {/* ── CONFIRM STEP ── */}
+        {!thinking && step === 5 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <div style={{ background:"var(--surface)", borderRadius:10, padding:"14px 16px",
+              border:`1.5px solid ${RISK_COLORS[form.risk]}40` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                <div style={{ width:36, height:36, borderRadius:9, display:"flex", alignItems:"center",
+                  justifyContent:"center", fontSize:18, background:`${RISK_COLORS[form.risk]}18` }}>🗂️</div>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:800, color:"var(--text)" }}>{form.name}</div>
+                  <span style={{ fontSize:10.5, fontWeight:700, color:RISK_COLORS[form.risk],
+                    background:`${RISK_COLORS[form.risk]}18`, padding:"1px 8px", borderRadius:6 }}>
+                    rischio {form.risk}
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize:12, color:"var(--text2)", marginBottom:8 }}>{form.desc}</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                {form.keywords.split(/[,;\n]+/).filter(k => k.trim()).map((k,i) => (
+                  <span key={i} style={{ fontSize:11, background:"var(--red-soft)", color:"var(--red)",
+                    padding:"1px 8px", borderRadius:8, fontWeight:600 }}>{k.trim()}</span>
+                ))}
+              </div>
+            </div>
+            <div style={{ background:"var(--surface)", borderRadius:10, padding:"12px 14px",
+              border:"1px solid var(--border)" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+                letterSpacing:"0.5px", marginBottom:6 }}>🤖 Agente IA configurato</div>
+              <div style={{ fontSize:12, color:"var(--text2)", lineHeight:1.6 }}>
+                L'agente utilizzerà <strong>nome</strong>, <strong>descrizione</strong>, <strong>parole chiave</strong> ed <strong>esempi</strong> per classificare automaticamente i documenti in questo cassetto durante l'analisi dei flussi email, PEC e REM, e nei caricamenti manuali.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* error */}
+        {error && !thinking && (
+          <div style={{ marginTop:10, fontSize:12, color:"#E02834", fontWeight:600 }}>⚠ {error}</div>
+        )}
+
+        {/* footer buttons */}
+        {!thinking && (
+          <div style={{ display:"flex", gap:10, marginTop:22 }}>
+            {step > 0 && step < 5 && (
+              <button onClick={() => setStep(s => s - 1)}
+                style={{ padding:"10px 18px", borderRadius:8, border:"1px solid var(--border)",
+                  background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)" }}>← Indietro</button>
+            )}
+            {step === 0 && (
+              <button onClick={onClose}
+                style={{ padding:"10px 18px", borderRadius:8, border:"1px solid var(--border)",
+                  background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"var(--font)" }}>Annulla</button>
+            )}
+            {step < 5 && (
+              <button onClick={next}
+                style={{ flex:1, padding:"10px", borderRadius:8, border:"none",
+                  background:"var(--red)", color:"#FEFAEF", fontSize:13, fontWeight:700,
+                  cursor:"pointer", fontFamily:"var(--font)" }}>
+                {step === 4 ? "Crea cassetto →" : "Avanti →"}
+              </button>
+            )}
+            {step === 5 && (
+              <>
+                <button onClick={() => setStep(4)}
+                  style={{ padding:"10px 18px", borderRadius:8, border:"1px solid var(--border)",
+                    background:"transparent", color:"var(--text2)", fontSize:13, fontWeight:600,
+                    cursor:"pointer", fontFamily:"var(--font)" }}>← Modifica</button>
+                <button onClick={confirm}
+                  style={{ flex:1, padding:"10px", borderRadius:8, border:"none",
+                    background:"var(--red)", color:"#FEFAEF", fontSize:13.5, fontWeight:700,
+                    cursor:"pointer", fontFamily:"var(--font)" }}>
+                  ✓ Aggiungi all'archivio
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   SEARCH HELPERS
+───────────────────────────────────────────── */
+const highlightMatch = (text, query) => {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <span className="search-highlight">{text.slice(idx, idx + query.length)}</span>
+      {text.slice(idx + query.length)}
+    </>
+  );
+};
+
+const searchDocs = (allDocs, query, scopeCat = null) => {
+  if (!query.trim()) return [];
+  const q = query.toLowerCase();
+  const pool = scopeCat ? allDocs.filter(d => d.category === scopeCat) : allDocs;
+  return pool.filter(d =>
+    d.subject.toLowerCase().includes(q) ||
+    d.from.toLowerCase().includes(q) ||
+    (d.amount && d.amount.toLowerCase().includes(q)) ||
+    getCategoryInfo(d.category).label.toLowerCase().includes(q)
+  ).slice(0, 7);
+};
+
+/* Global topbar search — receives allDocs + onSelect callback */
+const GlobalSearch = ({ allDocs, onSelect }) => {
+  const [query, setQuery]   = useState("");
+  const [open, setOpen]     = useState(false);
+  const wrapRef             = useRef(null);
+  const results             = searchDocs(allDocs, query);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = (doc) => {
+    onSelect(doc);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const showDropdown = open && query.trim().length > 0;
+
+  return (
+    <div
+      ref={wrapRef}
+      className={"search-box" + (showDropdown ? " open" : "")}
+    >
+      <Icon name="search" size={13} color={showDropdown ? "var(--red)" : "var(--text3)"} />
+      <input
+        placeholder="Cerca in tutti i documenti..."
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery(""); } }}
+      />
+      {query && (
+        <span
+          onClick={() => { setQuery(""); setOpen(false); }}
+          style={{ cursor:"pointer", color:"var(--text3)", fontSize:16, lineHeight:1, flexShrink:0 }}>×</span>
+      )}
+      {showDropdown && (
+        <div className="search-dropdown">
+          {results.length === 0 ? (
+            <div className="search-empty">Nessun documento trovato per "<strong>{query}</strong>"</div>
+          ) : (
+            results.map(doc => {
+              const cat = getCategoryInfo(doc.category);
+              return (
+                <div key={doc.id} className="search-result-item" onClick={() => handleSelect(doc)}>
+                  <ChannelTag channel={doc.channel} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div className="search-result-subject">{highlightMatch(doc.subject, query)}</div>
+                    <div className="search-result-from">{highlightMatch(doc.from, query)}</div>
+                  </div>
+                  <span style={{ fontSize:10.5, fontWeight:600, color:cat.color, background:`${cat.color}18`,
+                    padding:"2px 7px", borderRadius:5, flexShrink:0 }}>{cat.label}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* Cassetto-scoped search bar used inside CategoryLanding */
+const CatSearch = ({ docs, onSelect }) => {
+  const [query, setQuery] = useState("");
+  const [open, setOpen]   = useState(false);
+  const wrapRef           = useRef(null);
+  const results           = searchDocs(docs, query);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = (doc) => {
+    onSelect(doc);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const showDropdown = open && query.trim().length > 0;
+
+  return (
+    <div ref={wrapRef} className={"cat-search-wrap" + (showDropdown ? " open" : "")}>
+      <Icon name="search" size={13} color={showDropdown ? "var(--red)" : "var(--text3)"} />
+      <input
+        placeholder="Cerca in questo cassetto…"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery(""); } }}
+      />
+      {query && (
+        <span onClick={() => { setQuery(""); setOpen(false); }}
+          style={{ cursor:"pointer", color:"var(--text3)", fontSize:16, lineHeight:1, flexShrink:0 }}>×</span>
+      )}
+      <span className="search-scope-badge">solo cassetto</span>
+      {showDropdown && (
+        <div className="cat-search-dropdown">
+          {results.length === 0 ? (
+            <div className="search-empty">Nessun documento trovato per "<strong>{query}</strong>"</div>
+          ) : (
+            results.map(doc => (
+              <div key={doc.id} className="search-result-item" onClick={() => handleSelect(doc)}>
+                <ChannelTag channel={doc.channel} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div className="search-result-subject">{highlightMatch(doc.subject, query)}</div>
+                  <div className="search-result-from">{highlightMatch(doc.from, query)}</div>
+                </div>
+                {doc.deadline && <DeadlineBadge deadline={doc.deadline} />}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
    ROOT APP
 ───────────────────────────────────────────── */
 export default function App() {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage]           = useState("dashboard");
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [showNotif, setShowNotif] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [allDocs, setAllDocs]     = useState(MOCK_DOCS);
+
+  const handleGlobalSearchSelect = (doc) => {
+    setSelectedDoc(doc);
+    setPage("archive");
+  };
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -2941,10 +3844,7 @@ export default function App() {
             <div className="ai-chip" style={{ marginRight: 8 }}>
               <span className="ai-dot" />AI Engine attivo
             </div>
-            <div className="search-box">
-              <Icon name="search" size={13} color="var(--text3)" />
-              <input placeholder="Cerca in tutti i documenti..." />
-            </div>
+            <GlobalSearch allDocs={allDocs} onSelect={handleGlobalSearchSelect} />
             <div
               className="icon-btn"
               onClick={() => setShowNotif(v => !v)}
@@ -2959,7 +3859,7 @@ export default function App() {
           <div className="content">
             {page === "dashboard" && <Dashboard onDocClick={setSelectedDoc} onNavigate={setPage} />}
             {page === "inbox" && <Inbox onDocClick={setSelectedDoc} />}
-            {page === "archive" && <Archive onDocClick={setSelectedDoc} />}
+            {page === "archive" && <Archive onDocClick={setSelectedDoc} allDocs={allDocs} setAllDocs={setAllDocs} />}
             {page === "alerts" && <Alerts onDocClick={setSelectedDoc} />}
             {page === "connections" && <Connections />}
             {page === "calendar" && <CalendarPage onDocClick={setSelectedDoc} />}
