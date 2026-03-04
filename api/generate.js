@@ -1,3 +1,5 @@
+export const config = { api: { bodyParser: false } };
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -7,9 +9,19 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const rawBody = await new Promise((resolve, reject) => {
+      let data = "";
+      req.on("data", chunk => { data += chunk; });
+      req.on("end", () => resolve(data));
+      req.on("error", reject);
+    });
+
+    console.log("Raw body length:", rawBody.length);
+    const body = JSON.parse(rawBody);
+    console.log("Model:", body.model);
 
     if (!process.env.ANTHROPIC_API_KEY) {
+      console.error("Missing ANTHROPIC_API_KEY");
       return res.status(500).json({ error: "ANTHROPIC_API_KEY non configurata" });
     }
 
@@ -24,10 +36,10 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    if (!response.ok) {
-      console.error("Anthropic error:", response.status, JSON.stringify(data));
-    }
+    console.log("Anthropic status:", response.status);
+    if (!response.ok) console.error("Anthropic error:", JSON.stringify(data));
     res.status(response.status).json(data);
+
   } catch (e) {
     console.error("Handler error:", e.message);
     res.status(500).json({ error: e.message });
