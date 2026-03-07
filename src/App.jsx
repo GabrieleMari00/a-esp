@@ -903,6 +903,7 @@ const Icon = ({ name, size = 14, color = "currentColor" }) => {
     archive: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>,
     alert: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
     settings: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+    secretary: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="9" cy="10" r="1" fill={color}/><circle cx="12" cy="10" r="1" fill={color}/><circle cx="15" cy="10" r="1" fill={color}/></svg>,
     search: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
     bell: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
     link: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
@@ -944,6 +945,42 @@ const DocDrawer = ({ doc, onClose }) => {
   const cat = getCategoryInfo(doc.category);
   const d = daysUntil(doc.deadline);
   const isUrgent = d !== null && d <= 7;
+
+  const [aiSummary, setAiSummary] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!doc) return;
+    setAiSummary("");
+    setSummaryLoading(true);
+    const prompt = `Sei un assistente documentale italiano. Basandoti esclusivamente sui metadati seguenti, scrivi 2-3 frasi che identifichino chiaramente di quale documento si tratta: chi lo ha inviato, qual è l'oggetto specifico, e se presente l'importo o la scadenza. Non fare supposizioni su dettagli non presenti. Non aggiungere consigli o valutazioni. Sii preciso e conciso.
+
+Mittente: ${doc.from}
+Oggetto: ${doc.subject}
+Data: ${doc.date}
+Categoria: ${cat.label}
+${doc.amount ? `Importo: ${doc.amount}` : ""}
+${doc.deadline ? `Scadenza: ${doc.deadline}` : ""}
+
+Rispondi solo con la sintesi, senza prefissi o intestazioni.`;
+
+    fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        messages: [{ role: "user", content: prompt }]
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
+      const text = data.content?.map(b => b.text || "").join("") || "";
+      setAiSummary(text.trim());
+    })
+    .catch(() => setAiSummary(""))
+    .finally(() => setSummaryLoading(false));
+  }, [doc?.id]);
 
   return (
     <div className="drawer-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -990,6 +1027,33 @@ const DocDrawer = ({ doc, onClose }) => {
                 {cat.risk === "medio" && "Documento rilevante che richiede un'azione pianificata entro i termini indicati."}
                 {(cat.risk === "basso" || cat.risk === "basso-medio") && "Documento informativo o di bassa priorità. Nessuna azione immediata necessaria."}
               </div>
+            </div>
+          </div>
+
+          <div className="drawer-section">
+            <div className="drawer-section-title">AI Summary</div>
+            <div style={{ background:"var(--red-soft)", border:"1px solid rgba(224,40,52,0.18)",
+              borderRadius:10, padding:"14px 16px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:10 }}>
+                <span style={{ fontSize:13 }}>🤖</span>
+                <span style={{ fontSize:10.5, fontWeight:700, color:"var(--red)", textTransform:"uppercase", letterSpacing:"0.6px" }}>
+                  Sintesi generata da A-ESP AI
+                </span>
+              </div>
+              {summaryLoading && (
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ display:"inline-block", width:11, height:11, borderRadius:"50%",
+                    border:"2px solid var(--red)", borderTopColor:"transparent",
+                    animation:"spin 0.7s linear infinite", flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:"var(--text2)", fontStyle:"italic" }}>Analisi del documento in corso…</span>
+                </div>
+              )}
+              {!summaryLoading && aiSummary && (
+                <div style={{ fontSize:13, color:"var(--text)", lineHeight:1.7 }}>{aiSummary}</div>
+              )}
+              {!summaryLoading && !aiSummary && (
+                <div style={{ fontSize:12, color:"var(--text3)", fontStyle:"italic" }}>Sintesi non disponibile per questo documento.</div>
+              )}
             </div>
           </div>
 
@@ -1208,17 +1272,346 @@ const UrgentManager = ({ onBack, onDocClick }) => {
 };
 
 /* ─────────────────────────────────────────────
+   STAT LANDING PAGES
+───────────────────────────────────────────── */
+
+// Mini bar chart
+const BarChart = ({ data, color = "var(--red)" }) => {
+  const max = Math.max(...data.map(d => d.value), 1);
+  return (
+    <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:80 }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+          <div style={{ width:"100%", background:`${color}22`, borderRadius:4, height:72, display:"flex", alignItems:"flex-end" }}>
+            <div style={{ width:"100%", background:color, borderRadius:4,
+              height:`${Math.round((d.value/max)*100)}%`, minHeight:4, transition:"height 0.4s" }} />
+          </div>
+          <span style={{ fontSize:9.5, color:"var(--text3)", whiteSpace:"nowrap" }}>{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Mini donut
+const Donut = ({ segments }) => {
+  // segments: [{value, color, label}]
+  const total = segments.reduce((s,d) => s + d.value, 0);
+  let offset = 0;
+  const R = 36, C = 2 * Math.PI * R;
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:20 }}>
+      <svg width={90} height={90} viewBox="0 0 90 90">
+        <circle cx={45} cy={45} r={R} fill="none" stroke="var(--border)" strokeWidth={12} />
+        {segments.map((seg, i) => {
+          const dash = (seg.value / total) * C;
+          const el = (
+            <circle key={i} cx={45} cy={45} r={R} fill="none"
+              stroke={seg.color} strokeWidth={12}
+              strokeDasharray={`${dash} ${C - dash}`}
+              strokeDashoffset={-offset}
+              transform="rotate(-90 45 45)" />
+          );
+          offset += dash;
+          return el;
+        })}
+        <text x={45} y={49} textAnchor="middle" fontSize={13} fontWeight={700} fill="var(--text)">{total}</text>
+      </svg>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {segments.map((seg, i) => (
+          <div key={i} style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <div style={{ width:10, height:10, borderRadius:3, background:seg.color, flexShrink:0 }} />
+            <span style={{ fontSize:11.5, color:"var(--text2)" }}>{seg.label}</span>
+            <span style={{ fontSize:11.5, fontWeight:700, color:"var(--text)", marginLeft:"auto", paddingLeft:8 }}>{seg.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const StatPage = ({ title, color, onBack, children }) => (
+  <div className="fade-in">
+    <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:24 }}>
+      <button onClick={onBack} style={{ background:"var(--surface)", border:"1px solid var(--border)",
+        borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:12, fontWeight:600,
+        color:"var(--text2)", fontFamily:"var(--font)", display:"flex", alignItems:"center", gap:6 }}>
+        ← Torna alla dashboard
+      </button>
+      <div style={{ fontSize:18, fontWeight:800, color:"var(--text)" }}>{title}</div>
+      <div style={{ width:10, height:10, borderRadius:"50%", background:color, marginLeft:2 }} />
+    </div>
+    {children}
+  </div>
+);
+
+const StatCard2 = ({ label, value, sub, color }) => (
+  <div style={{ background:"var(--card)", border:`1px solid ${color}30`, borderRadius:12,
+    padding:"18px 20px", borderTop:`3px solid ${color}` }}>
+    <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+      letterSpacing:"0.7px", marginBottom:6 }}>{label}</div>
+    <div style={{ fontSize:28, fontWeight:800, color, marginBottom:4 }}>{value}</div>
+    {sub && <div style={{ fontSize:11.5, color:"var(--text3)" }}>{sub}</div>}
+  </div>
+);
+
+// ── NON LETTI ──
+const UnreadPage = ({ onBack, onDocClick }) => {
+  const unread  = MOCK_DOCS.filter(d => !d.read);
+  const urgent  = unread.filter(d => d.urgent);
+  const byChannel = ["EMAIL","PEC","REM"].map(ch => ({
+    label: ch, value: unread.filter(d => d.channel === ch).length
+  }));
+  const byCat = {};
+  unread.forEach(d => { byCat[d.category] = (byCat[d.category]||0)+1; });
+  const catSegs = Object.entries(byCat).map(([code, val]) => {
+    const cat = getCategoryInfo(code);
+    return { value: val, color: cat.color, label: cat.label };
+  });
+  const byDay = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map((label,i) => ({
+    label, value: unread.filter((_,j) => j % 7 === i).length + Math.floor(Math.random()*2)
+  }));
+
+  return (
+    <StatPage title="Non letti" color="var(--red)" onBack={onBack}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        <StatCard2 label="Totale non letti" value={unread.length} color="var(--red)" />
+        <StatCard2 label="Di cui urgenti" value={urgent.length} sub="Richiedono azione immediata" color="var(--red)" />
+        <StatCard2 label="Via PEC / REM" value={unread.filter(d=>d.channel!=="EMAIL").length} sub="Valore legale" color="var(--red)" />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Per canale</div>
+          <BarChart data={byChannel} color="var(--red)" />
+        </div>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Per categoria</div>
+          <Donut segments={catSegs} />
+        </div>
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontSize:12, fontWeight:700, color:"var(--text)" }}>
+          Documenti non letti
+        </div>
+        <table className="doc-table" style={{ width:"100%" }}>
+          <thead><tr><th style={{paddingLeft:16}}>Canale</th><th>Documento</th><th>Categoria</th><th>Scadenza</th></tr></thead>
+          <tbody>
+            {unread.map(doc => {
+              const cat = getCategoryInfo(doc.category);
+              return (
+                <tr key={doc.id} className="doc-row unread" onClick={() => onDocClick(doc)}>
+                  <td style={{paddingLeft:16}}><div style={{display:"flex",alignItems:"center",gap:6}}><div className="urgency-dot" style={{background:doc.urgent?"var(--red)":"var(--red-mid)"}} /><ChannelTag channel={doc.channel} /></div></td>
+                  <td><div className="doc-subject">{doc.subject}</div><div className="doc-from">{doc.from}</div></td>
+                  <td><span className="cat-pill" style={{color:cat.color,background:`${cat.color}18`}}>{cat.label}</span></td>
+                  <td>{doc.deadline ? <DeadlineBadge deadline={doc.deadline} /> : <span style={{color:"var(--text3)",fontSize:11}}>—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </StatPage>
+  );
+};
+
+// ── IN SCADENZA ──
+const DeadlinePage = ({ onBack, onDocClick }) => {
+  const expiring = MOCK_DOCS.filter(d => daysUntil(d.deadline) !== null && daysUntil(d.deadline) >= 0 && daysUntil(d.deadline) <= 30);
+  const within7  = expiring.filter(d => daysUntil(d.deadline) <= 7);
+  const within15 = expiring.filter(d => daysUntil(d.deadline) > 7 && daysUntil(d.deadline) <= 15);
+  const within30 = expiring.filter(d => daysUntil(d.deadline) > 15);
+  const barData = [
+    { label:"0–7 gg", value: within7.length },
+    { label:"8–15 gg", value: within15.length },
+    { label:"16–30 gg", value: within30.length },
+  ];
+  const catSegs = Object.entries(
+    expiring.reduce((acc,d) => { acc[d.category]=(acc[d.category]||0)+1; return acc; }, {})
+  ).map(([code,val]) => { const cat=getCategoryInfo(code); return {value:val,color:cat.color,label:cat.label}; });
+
+  return (
+    <StatPage title="In scadenza (30 giorni)" color="var(--amber)" onBack={onBack}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        <StatCard2 label="Totale in scadenza" value={expiring.length} color="var(--amber)" />
+        <StatCard2 label="Entro 7 giorni" value={within7.length} sub="Priorità critica" color="var(--red)" />
+        <StatCard2 label="Totale esposto" value={"€ "+expiring.filter(d=>d.amount).reduce((s,d)=>s+parseFloat(d.amount.replace(/[^0-9,]/g,"").replace(",",".")),0).toLocaleString("it-IT",{minimumFractionDigits:2})} sub="Importi con scadenza" color="var(--amber)" />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Distribuzione temporale</div>
+          <BarChart data={barData} color="var(--amber)" />
+        </div>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Per categoria</div>
+          <Donut segments={catSegs} />
+        </div>
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontSize:12, fontWeight:700 }}>Documenti in scadenza — ordinati per urgenza</div>
+        <table className="doc-table" style={{ width:"100%" }}>
+          <thead><tr><th style={{paddingLeft:16}}>Canale</th><th>Documento</th><th>Categoria</th><th>Scadenza</th></tr></thead>
+          <tbody>
+            {[...expiring].sort((a,b)=>daysUntil(a.deadline)-daysUntil(b.deadline)).map(doc => {
+              const cat = getCategoryInfo(doc.category);
+              return (
+                <tr key={doc.id} className="doc-row" onClick={() => onDocClick(doc)}>
+                  <td style={{paddingLeft:16}}><ChannelTag channel={doc.channel} /></td>
+                  <td><div className="doc-subject">{doc.subject}</div><div className="doc-from">{doc.from}</div></td>
+                  <td><span className="cat-pill" style={{color:cat.color,background:`${cat.color}18`}}>{cat.label}</span></td>
+                  <td><DeadlineBadge deadline={doc.deadline} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </StatPage>
+  );
+};
+
+// ── ARCHIVIATI ──
+const ArchivedPage = ({ onBack, onDocClick }) => {
+  const archived = MOCK_DOCS.filter(d => d.managed);
+  const byChannel = ["EMAIL","PEC","REM"].map(ch => ({ label:ch, value:archived.filter(d=>d.channel===ch).length }));
+  const byMonth = ["Ott","Nov","Dic","Gen","Feb","Mar"].map((label,i) => ({
+    label, value: [3,5,8,4,6,archived.length][i] || 0
+  }));
+  const catSegs = Object.entries(
+    archived.reduce((acc,d) => { acc[d.category]=(acc[d.category]||0)+1; return acc; }, {})
+  ).map(([code,val]) => { const cat=getCategoryInfo(code); return {value:val,color:cat.color,label:cat.label}; });
+
+  return (
+    <StatPage title="Archiviati" color="var(--teal)" onBack={onBack}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        <StatCard2 label="Totale archiviati" value={247} sub="+12 questa settimana" color="var(--teal)" />
+        <StatCard2 label="Gestiti (mock)" value={archived.length} sub="Nell'insieme corrente" color="var(--teal)" />
+        <StatCard2 label="Conservazione" value="10 anni" sub="Obbligo normativo fatture" color="var(--teal)" />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Archiviati per mese</div>
+          <BarChart data={byMonth} color="var(--teal)" />
+        </div>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Per categoria</div>
+          <Donut segments={catSegs} />
+        </div>
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px", marginBottom:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Per canale</div>
+        <BarChart data={byChannel} color="var(--teal)" />
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontSize:12, fontWeight:700 }}>Documenti gestiti</div>
+        <table className="doc-table" style={{ width:"100%" }}>
+          <thead><tr><th style={{paddingLeft:16}}>Canale</th><th>Documento</th><th>Categoria</th><th>Scadenza</th></tr></thead>
+          <tbody>
+            {archived.map(doc => {
+              const cat = getCategoryInfo(doc.category);
+              return (
+                <tr key={doc.id} className="doc-row" onClick={() => onDocClick(doc)}>
+                  <td style={{paddingLeft:16}}><ChannelTag channel={doc.channel} /></td>
+                  <td><div className="doc-subject">{doc.subject}</div><div className="doc-from">{doc.from}</div></td>
+                  <td><span className="cat-pill" style={{color:cat.color,background:`${cat.color}18`}}>{cat.label}</span></td>
+                  <td>{doc.deadline ? <DeadlineBadge deadline={doc.deadline} /> : <span style={{color:"var(--text3)",fontSize:11}}>—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </StatPage>
+  );
+};
+
+// ── RISCHIO ECONOMICO ──
+const RiskPage = ({ onBack, onDocClick }) => {
+  const risky = MOCK_DOCS.filter(d => d.amount);
+  const total = risky.reduce((s,d) => s + parseFloat(d.amount.replace(/[^0-9,]/g,"").replace(",",".")), 0);
+  const high   = risky.filter(d => ["C01","C02"].includes(d.category));
+  const medium = risky.filter(d => d.category === "C03");
+  const low    = risky.filter(d => !["C01","C02","C03"].includes(d.category));
+  const sum = arr => arr.reduce((s,d)=>s+parseFloat(d.amount.replace(/[^0-9,]/g,"").replace(",",".")),0);
+  const donutSegs = [
+    { value: high.length,   color:"var(--red)",      label:"Alto rischio" },
+    { value: medium.length, color:"var(--amber)",    label:"Medio rischio" },
+    { value: low.length,    color:"var(--teal)",     label:"Basso rischio" },
+  ].filter(s => s.value > 0);
+  const barData = [
+    { label:"Alto",   value: Math.round(sum(high)) },
+    { label:"Medio",  value: Math.round(sum(medium)) },
+    { label:"Basso",  value: Math.round(sum(low)) },
+  ];
+
+  return (
+    <StatPage title="Rischio economico" color="var(--blue)" onBack={onBack}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+        <StatCard2 label="Esposizione totale" value={"€ "+total.toLocaleString("it-IT",{minimumFractionDigits:2})} sub="Somma importi con scadenza" color="var(--blue)" />
+        <StatCard2 label="Alto rischio" value={high.length+" doc."} sub={"€ "+sum(high).toLocaleString("it-IT",{minimumFractionDigits:2})} color="var(--red)" />
+        <StatCard2 label="Sanzioni potenziali" value="fino al 30%" sub="Su importi non pagati >60gg" color="var(--amber)" />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Esposizione per livello (€)</div>
+          <BarChart data={barData} color="var(--blue)" />
+        </div>
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"18px 20px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.7px", marginBottom:14 }}>Distribuzione documenti</div>
+          <Donut segments={donutSegs} />
+        </div>
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, padding:"16px 20px", marginBottom:16,
+        borderLeft:"3px solid var(--red)" }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"var(--red)", textTransform:"uppercase", letterSpacing:"0.6px", marginBottom:10 }}>
+          Tabella sanzioni ravvedimento operoso
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6 }}>
+          {[["Entro 14 gg","+0,1%/gg"],["15–30 gg","+1,5%"],["31–90 gg","+1,67%"],["91gg–1 anno","+3,75%"],[">1 anno","+5%"]].map(([label,pct],i) => (
+            <div key={i} style={{ background:"var(--surface)", borderRadius:8, padding:"10px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:10, color:"var(--text3)", marginBottom:4 }}>{label}</div>
+              <div style={{ fontSize:13, fontWeight:800, color:"var(--red)" }}>{pct}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ padding:"14px 18px", borderBottom:"1px solid var(--border)", fontSize:12, fontWeight:700 }}>Documenti con importo — ordinati per rischio</div>
+        <table className="doc-table" style={{ width:"100%" }}>
+          <thead><tr><th style={{paddingLeft:16}}>Canale</th><th>Documento</th><th>Importo</th><th>Scadenza</th></tr></thead>
+          <tbody>
+            {[...risky].sort((a,b) => {
+              const order = {"C02":0,"C01":1,"C03":2};
+              return (order[a.category]??3) - (order[b.category]??3);
+            }).map(doc => (
+              <tr key={doc.id} className="doc-row" onClick={() => onDocClick(doc)}>
+                <td style={{paddingLeft:16}}><ChannelTag channel={doc.channel} /></td>
+                <td><div className="doc-subject">{doc.subject}</div><div className="doc-from">{doc.from}</div></td>
+                <td><span style={{color:"var(--red)",fontFamily:"var(--mono)",fontWeight:700,fontSize:13}}>{doc.amount}</span></td>
+                <td>{doc.deadline ? <DeadlineBadge deadline={doc.deadline} /> : <span style={{color:"var(--text3)",fontSize:11}}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </StatPage>
+  );
+};
+
+/* ─────────────────────────────────────────────
    PAGES
 ───────────────────────────────────────────── */
 const Dashboard = ({ onDocClick, onNavigate }) => {
   const urgent = MOCK_DOCS.filter(d => d.urgent && !d.managed);
   const totalRisk = MOCK_DOCS.filter(d => ["C01","C02","C03"].includes(d.category));
   const unread = MOCK_DOCS.filter(d => !d.read);
-  const [showUrgent, setShowUrgent] = useState(false);
+  const [showUrgent,   setShowUrgent]   = useState(false);
+  const [statPage,     setStatPage]     = useState(null); // "unread"|"deadline"|"archived"|"risk"
 
-  if (showUrgent) {
-    return <UrgentManager onBack={() => setShowUrgent(false)} onDocClick={onDocClick} />;
-  }
+  if (showUrgent) return <UrgentManager onBack={() => setShowUrgent(false)} onDocClick={onDocClick} />;
+  if (statPage === "unread")   return <UnreadPage   onBack={() => setStatPage(null)} onDocClick={onDocClick} />;
+  if (statPage === "deadline") return <DeadlinePage onBack={() => setStatPage(null)} onDocClick={onDocClick} />;
+  if (statPage === "archived") return <ArchivedPage onBack={() => setStatPage(null)} onDocClick={onDocClick} />;
+  if (statPage === "risk")     return <RiskPage     onBack={() => setStatPage(null)} onDocClick={onDocClick} />;
 
   return (
     <div className="fade-in">
@@ -1235,24 +1628,24 @@ const Dashboard = ({ onDocClick, onNavigate }) => {
 
       {/* STATS */}
       <div className="stats-grid">
-        <div className="stat-card red">
+        <div className="stat-card red" style={{ cursor:"pointer" }} onClick={() => setStatPage("unread")}>
           <div className="stat-label">Non letti</div>
           <div className="stat-value" style={{ color: "var(--red)" }}>{unread.length}</div>
           <div className="stat-sub"><span>{urgent.length} urgenti</span> da gestire</div>
         </div>
-        <div className="stat-card amber">
+        <div className="stat-card amber" style={{ cursor:"pointer" }} onClick={() => setStatPage("deadline")}>
           <div className="stat-label">In scadenza (30gg)</div>
           <div className="stat-value" style={{ color: "var(--amber)" }}>
             {MOCK_DOCS.filter(d => daysUntil(d.deadline) !== null && daysUntil(d.deadline) <= 30 && daysUntil(d.deadline) >= 0).length}
           </div>
           <div className="stat-sub">Prossimo: <span>3 giorni</span></div>
         </div>
-        <div className="stat-card teal">
+        <div className="stat-card teal" style={{ cursor:"pointer" }} onClick={() => setStatPage("archived")}>
           <div className="stat-label">Archiviati</div>
           <div className="stat-value" style={{ color: "var(--teal)" }}>247</div>
           <div className="stat-sub">+<span>12</span> questa settimana</div>
         </div>
-        <div className="stat-card blue">
+        <div className="stat-card blue" style={{ cursor:"pointer" }} onClick={() => setStatPage("risk")}>
           <div className="stat-label">Rischio economico</div>
           <div className="stat-value" style={{ color: "var(--blue)" }}>€ 4.827</div>
           <div className="stat-sub"><span>{totalRisk.length} doc.</span> ad alto rischio</div>
@@ -1370,90 +1763,344 @@ const Dashboard = ({ onDocClick, onNavigate }) => {
 
 /* ─── INBOX ─── */
 const Inbox = ({ onDocClick }) => {
-  const [filter, setFilter] = useState("all");
-  const [search, setSearch] = useState("");
+  const EMPTY_FILTERS = { stato:"", canale:"", cat:"", importo:"", data:"", scadenza:"" };
+  const [quickFilter,  setQuickFilter] = useState("all");
+  const [search,       setSearch]      = useState("");
+  const [colFilters,   setColFilters]  = useState(EMPTY_FILTERS);
+  const [openCol,      setOpenCol]     = useState(null);
+  const [sortCol,      setSortCol]     = useState(null);   // "date"|"amount"|"deadline"|"subject"
+  const [sortDir,      setSortDir]     = useState("desc"); // "asc"|"desc"
 
-  const filters = [
-    { key: "all", label: "Tutti" },
-    { key: "unread", label: "Non letti" },
-    { key: "urgent", label: "Urgenti" },
-    { key: "PEC", label: "PEC" },
-    { key: "EMAIL", label: "Email" },
-    { key: "REM", label: "REM" },
+  const quickFilters = [
+    { key:"all",    label:"Tutti" },
+    { key:"unread", label:"Non letti" },
+    { key:"urgent", label:"Urgenti" },
+    { key:"PEC",    label:"PEC" },
+    { key:"EMAIL",  label:"Email" },
+    { key:"REM",    label:"REM" },
   ];
 
-  const filtered = MOCK_DOCS.filter(d => {
-    if (filter === "unread") return !d.read;
-    if (filter === "urgent") return d.urgent;
-    if (filter === "PEC" || filter === "EMAIL" || filter === "REM") return d.channel === filter;
+  // ── option lists ──
+  const allD = MOCK_DOCS;
+  const statoOpts   = ["Non letto","Letto","Urgente"];
+  const channels    = [...new Set(allD.map(d => d.channel))];
+  const cats        = [...new Set(allD.map(d => d.category))];
+  const importoOpts = ["Con importo","Senza importo","< 100€","100–500€","500–1000€","> 1000€"];
+  const dataOpts    = [...new Set(allD.map(d => d.date.slice(0,7)))].sort().reverse();
+  const scadOpts    = ["Scaduto","Entro 7 gg","Entro 30 gg","Oltre 30 gg","Nessuna scadenza"];
+
+  // ── toggles ──
+  const setCol = (col, val) => {
+    setColFilters(prev => ({ ...prev, [col]: prev[col]===val ? "" : val }));
+    setOpenCol(null);
+  };
+  const clearCol = (col, e) => { e.stopPropagation(); setColFilters(prev => ({ ...prev, [col]:"" })); };
+  const resetAll = () => { setColFilters(EMPTY_FILTERS); setQuickFilter("all"); setSearch(""); setSortCol(null); };
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d==="asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("desc"); }
+  };
+
+  // ── parse amount ──
+  const parseAmt = str => str ? parseFloat(str.replace(/[^0-9,.]/g,"").replace(",",".")) || 0 : null;
+
+  // ── filter pipeline ──
+  const base = allD.filter(d => {
+    if (quickFilter==="unread") return !d.read;
+    if (quickFilter==="urgent") return d.urgent;
+    if (quickFilter==="PEC"||quickFilter==="EMAIL"||quickFilter==="REM") return d.channel===quickFilter;
     return true;
   }).filter(d =>
-    d.subject.toLowerCase().includes(search.toLowerCase()) ||
+    !search || d.subject.toLowerCase().includes(search.toLowerCase()) ||
     d.from.toLowerCase().includes(search.toLowerCase())
+  ).filter(d => {
+    const { stato, canale, cat, importo, data, scadenza } = colFilters;
+    if (stato==="Non letto" && d.read)  return false;
+    if (stato==="Letto"     && !d.read) return false;
+    if (stato==="Urgente"   && !d.urgent) return false;
+    if (canale && d.channel  !== canale) return false;
+    if (cat    && d.category !== cat)   return false;
+    const amt = parseAmt(d.amount);
+    if (importo==="Con importo"    && !d.amount)  return false;
+    if (importo==="Senza importo"  &&  d.amount)  return false;
+    if (importo==="< 100€"         && (amt===null||amt>=100))   return false;
+    if (importo==="100–500€"       && (amt===null||amt<100||amt>500))  return false;
+    if (importo==="500–1000€"      && (amt===null||amt<500||amt>1000)) return false;
+    if (importo==="> 1000€"        && (amt===null||amt<=1000))  return false;
+    if (data && !d.date.startsWith(data)) return false;
+    if (scadenza) {
+      const days = daysUntil(d.deadline);
+      if (scadenza==="Scaduto"         && (days===null||days>=0))        return false;
+      if (scadenza==="Entro 7 gg"      && (days===null||days<0||days>7)) return false;
+      if (scadenza==="Entro 30 gg"     && (days===null||days<0||days>30)) return false;
+      if (scadenza==="Oltre 30 gg"     && (days===null||days<=30))       return false;
+      if (scadenza==="Nessuna scadenza"&& days!==null)                   return false;
+    }
+    return true;
+  });
+
+  // ── sort ──
+  const filtered = [...base].sort((a,b) => {
+    if (!sortCol) return 0;
+    let va, vb;
+    if (sortCol==="date")     { va=a.date;     vb=b.date; }
+    if (sortCol==="subject")  { va=a.subject;  vb=b.subject; }
+    if (sortCol==="amount")   { va=parseAmt(a.amount)||0; vb=parseAmt(b.amount)||0; }
+    if (sortCol==="deadline") {
+      va=daysUntil(a.deadline)??9999;
+      vb=daysUntil(b.deadline)??9999;
+    }
+    if (va<vb) return sortDir==="asc" ? -1 : 1;
+    if (va>vb) return sortDir==="asc" ?  1 : -1;
+    return 0;
+  });
+
+  const activeCount = Object.values(colFilters).filter(Boolean).length;
+
+  // ── SortIcon ──
+  const SortIcon = ({ col }) => {
+    const active = sortCol===col;
+    return (
+      <span onClick={e=>{ e.stopPropagation(); toggleSort(col); }}
+        style={{ marginLeft:5, cursor:"pointer", opacity: active ? 1 : 0.35,
+          color: active ? "var(--red)" : "var(--text3)", fontSize:10, userSelect:"none" }}>
+        {active && sortDir==="asc" ? "▲" : "▼"}
+      </span>
+    );
+  };
+
+  // ── ColFilter dropdown ──
+  const ColFilter = ({ col, options, labelFn }) => {
+    const isOpen = openCol===col;
+    const active = colFilters[col];
+    return (
+      <span style={{ position:"relative", display:"inline-flex", alignItems:"center" }}
+        onClick={e => e.stopPropagation()}>
+        {/* trigger button */}
+        <button
+          onClick={() => setOpenCol(isOpen ? null : col)}
+          title={active ? `Filtro attivo: ${labelFn ? labelFn(active) : active}` : "Filtra"}
+          style={{
+            background: active ? "var(--red)" : "transparent",
+            border: `1px solid ${active ? "var(--red)" : "transparent"}`,
+            borderRadius: 4, padding:"1px 4px", cursor:"pointer",
+            fontSize:10, fontWeight:700,
+            color: active ? "#FEFAEF" : "var(--text3)",
+            marginLeft:4, display:"inline-flex", alignItems:"center",
+            fontFamily:"var(--font)", transition:"all 0.15s", lineHeight:1,
+            boxShadow: active ? "0 1px 4px rgba(176,32,40,0.25)" : "none"
+          }}>
+          {active
+            ? <><span>▾</span><span onClick={e => clearCol(col,e)} style={{marginLeft:3,opacity:0.85,fontSize:9}}>✕</span></>
+            : <span>▾</span>
+          }
+        </button>
+
+        {/* dropdown */}
+        {isOpen && (
+          <div style={{
+            position:"absolute", top:"calc(100% + 6px)",
+            left: 0,
+            zIndex:300, minWidth:180,
+            background:"var(--card)", border:"1px solid var(--border)", borderRadius:10,
+            boxShadow:"0 12px 32px rgba(0,0,0,0.18)", overflow:"hidden"
+          }}>
+            {/* header */}
+            <div style={{ padding:"8px 12px 6px", borderBottom:"1px solid var(--border)",
+              fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:"0.6px" }}>
+              Filtra per {col}
+            </div>
+            {/* options */}
+            <div style={{ maxHeight:220, overflowY:"auto" }}>
+              {options.map(opt => {
+                const label = labelFn ? labelFn(opt) : opt;
+                const isActive = active===opt;
+                return (
+                  <button key={opt} onClick={() => setCol(col, opt)}
+                    style={{
+                      width:"100%", padding:"8px 14px",
+                      background: isActive ? "var(--red-soft)" : "transparent",
+                      border:"none", textAlign:"left", cursor:"pointer", fontSize:12.5,
+                      color: isActive ? "var(--red)" : "var(--text)",
+                      fontFamily:"var(--font)", fontWeight: isActive ? 700 : 400,
+                      display:"flex", alignItems:"center", justifyContent:"space-between",
+                      transition:"background 0.1s"
+                    }}>
+                    <span>{label}</span>
+                    {isActive && <span style={{fontSize:11,color:"var(--red)"}}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {/* clear */}
+            {active && (
+              <div style={{ borderTop:"1px solid var(--border)", padding:"6px 8px" }}>
+                <button onClick={() => setCol(col, active)}
+                  style={{ width:"100%", padding:"6px 8px", background:"none", border:"none",
+                    fontSize:11.5, color:"var(--text3)", cursor:"pointer", fontFamily:"var(--font)",
+                    textAlign:"center", fontWeight:600 }}>
+                  Rimuovi filtro
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </span>
+    );
+  };
+
+  // ── TH helper ──
+  const Th = ({ children, sortKey, col, opts, labelFn, style }) => (
+    <th style={{ userSelect:"none", ...style }}>
+      <div style={{ display:"flex", alignItems:"center", gap:0, flexWrap:"nowrap" }}>
+        {sortKey
+          ? <span onClick={() => toggleSort(sortKey)} style={{ cursor:"pointer", display:"flex", alignItems:"center", gap:3 }}>
+              {children}
+              <SortIcon col={sortKey} />
+            </span>
+          : <span>{children}</span>
+        }
+        {col && <ColFilter col={col} options={opts} labelFn={labelFn} />}
+      </div>
+    </th>
   );
 
   return (
-    <div className="fade-in">
+    <div className="fade-in" onClick={() => setOpenCol(null)}>
+      {/* ── HEADER ── */}
       <div className="section-hdr">
         <div>
           <div className="section-title">Inbox Intelligente</div>
-          <div className="section-sub">{filtered.length} documenti • AI classifica in tempo reale</div>
+          <div className="section-sub">{filtered.length} / {allD.length} documenti • AI classifica in tempo reale</div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div className="search-box" style={{ width: 200 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <div className="search-box" style={{ width:210 }}>
             <Icon name="search" size={13} color="var(--text3)" />
-            <input placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Cerca mittente o oggetto…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          {(activeCount>0||search||quickFilter!=="all"||sortCol) && (
+            <button onClick={resetAll} title="Reset tutti i filtri"
+              style={{ background:"var(--red-soft)", border:"1px solid var(--red)", borderRadius:7,
+                padding:"5px 11px", cursor:"pointer", fontSize:11.5, fontWeight:700,
+                color:"var(--red)", fontFamily:"var(--font)", display:"flex", alignItems:"center", gap:5 }}>
+              ✕ Reset filtri
+              {activeCount>0 && <span style={{ background:"var(--red)", color:"#FEFAEF",
+                borderRadius:"50%", width:16, height:16, fontSize:10, display:"flex",
+                alignItems:"center", justifyContent:"center" }}>{activeCount}</span>}
+            </button>
+          )}
           <div className="icon-btn"><Icon name="refresh" size={14} /></div>
         </div>
       </div>
 
+      {/* ── QUICK FILTERS ── */}
       <div className="filter-bar">
-        {filters.map(f => (
-          <button key={f.key} className={`filter-btn ${filter === f.key ? "active" : ""}`} onClick={() => setFilter(f.key)}>
+        {quickFilters.map(f => (
+          <button key={f.key} className={`filter-btn ${quickFilter===f.key ? "active" : ""}`}
+            onClick={() => setQuickFilter(f.key)}>
             {f.label}
-            {f.key === "unread" && ` (${MOCK_DOCS.filter(d => !d.read).length})`}
-            {f.key === "urgent" && ` (${MOCK_DOCS.filter(d => d.urgent).length})`}
+            {f.key==="unread" && ` (${allD.filter(d=>!d.read).length})`}
+            {f.key==="urgent" && ` (${allD.filter(d=>d.urgent).length})`}
           </button>
         ))}
       </div>
 
-      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-        {filtered.length === 0 ? (
-          <div className="empty"><div className="empty-icon">📭</div><div className="empty-text">Nessun documento trovato</div></div>
+      {/* ── ACTIVE FILTER CHIPS ── */}
+      {activeCount > 0 && (
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10, padding:"8px 12px",
+          background:"var(--red-soft)", borderRadius:9, border:"1px solid rgba(176,32,40,0.15)" }}>
+          <span style={{ fontSize:11, fontWeight:700, color:"var(--red)", marginRight:2, alignSelf:"center" }}>
+            Filtri attivi:
+          </span>
+          {Object.entries(colFilters).filter(([,v])=>v).map(([col,val]) => {
+            const label = col==="cat" ? getCategoryInfo(val).label : val;
+            return (
+              <span key={col} style={{ display:"inline-flex", alignItems:"center", gap:5,
+                background:"var(--red)", color:"#FEFAEF", borderRadius:20,
+                padding:"3px 10px", fontSize:11, fontWeight:600 }}>
+                <span style={{ textTransform:"capitalize", opacity:0.75 }}>{col}:</span>
+                <span>{label}</span>
+                <button onClick={() => setColFilters(p=>({...p,[col]:""}))}
+                  style={{ background:"none",border:"none",color:"#FEFAEF",cursor:"pointer",
+                    fontSize:12,padding:0,lineHeight:1,opacity:0.8,fontFamily:"var(--font)" }}>✕</button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── TABLE ── */}
+      <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+        {filtered.length===0 ? (
+          <div className="empty">
+            <div className="empty-icon">🔍</div>
+            <div className="empty-text">Nessun documento corrisponde ai filtri attivi</div>
+            <button onClick={resetAll}
+              style={{ marginTop:10, background:"var(--red-soft)", border:"1px solid var(--red)",
+                borderRadius:7, padding:"7px 18px", cursor:"pointer", fontSize:12,
+                fontWeight:700, color:"var(--red)", fontFamily:"var(--font)" }}>
+              Rimuovi tutti i filtri
+            </button>
+          </div>
         ) : (
           <table className="doc-table">
             <thead>
               <tr>
-                <th style={{ paddingLeft: 16, width: 40 }}></th>
-                <th style={{ width: 80 }}>Canale</th>
-                <th>Documento</th>
-                <th>Cat.</th>
-                <th>Importo</th>
-                <th>Data</th>
-                <th>Scadenza</th>
+                <Th col="stato" opts={statoOpts} style={{ paddingLeft:16, width:90 }}>Stato</Th>
+                <Th col="canale"   opts={channels}    style={{ width:90  }}>Canale</Th>
+                <Th col="cat" opts={cats} labelFn={code=>getCategoryInfo(code).label}>
+                  Documento
+                </Th>
+                <Th col="importo" opts={importoOpts}>Importo</Th>
+                <Th col="data"    opts={dataOpts}>Data</Th>
+                <Th col="scadenza" opts={scadOpts}>Scadenza</Th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(doc => {
                 const cat = getCategoryInfo(doc.category);
                 return (
-                  <tr key={doc.id} className={`doc-row ${!doc.read ? "unread" : ""}`} onClick={() => onDocClick(doc)}>
-                    <td style={{ paddingLeft: 16 }}>
-                      {!doc.read && <div className="urgency-dot" style={{ background: doc.urgent ? "var(--red)" : "var(--red-mid)" }} />}
+                  <tr key={doc.id} className={`doc-row ${!doc.read?"unread":""}`} onClick={() => onDocClick(doc)}>
+                    {/* Stato — dot + pills inline */}
+                    <td style={{ paddingLeft:16, width:90 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                        <div className="urgency-dot" style={{
+                          background: !doc.read ? (doc.urgent ? "var(--red)" : "var(--red-mid)") : "transparent",
+                          border: doc.read ? "1.5px solid var(--border)" : "none",
+                          flexShrink:0
+                        }} />
+                        {doc.urgent && (
+                          <span style={{ fontSize:9, fontWeight:800, color:"var(--red)",
+                            border:"1px solid var(--red)", borderRadius:3,
+                            padding:"1px 4px", letterSpacing:"0.3px", lineHeight:1.4 }}>URG</span>
+                        )}
+                        {!doc.read && !doc.urgent && (
+                          <span style={{ fontSize:9, fontWeight:700, color:"var(--red-mid)",
+                            border:"1px solid var(--red-mid)", borderRadius:3,
+                            padding:"1px 4px", letterSpacing:"0.3px", lineHeight:1.4 }}>NEW</span>
+                        )}
+                      </div>
                     </td>
+                    {/* Canale */}
                     <td><ChannelTag channel={doc.channel} /></td>
+                    {/* Documento + categoria */}
                     <td>
-                      <div className="subject-text" style={{ fontWeight: !doc.read ? 600 : 400 }}>{doc.subject}</div>
-                      <div className="doc-from">{doc.from}</div>
+                      <div className="doc-subject" style={{ fontWeight: !doc.read ? 700 : 400 }}>{doc.subject}</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:2 }}>
+                        <span className="doc-from">{doc.from}</span>
+                        <span style={{ fontSize:10, fontWeight:600, color:cat.color,
+                          background:`${cat.color}18`, padding:"1px 5px", borderRadius:3 }}>{cat.label}</span>
+                      </div>
                     </td>
-                    <td>
-                      <span title={cat.label} style={{ fontSize: 11, fontWeight: 600, color: cat.color, background: `${cat.color}18`, padding: "2px 6px", borderRadius: 4, cursor: "help" }}>{cat.label}</span>
-                    </td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: doc.amount ? 600 : 400, color: doc.amount ? "var(--text)" : "var(--text3)" }}>
+                    {/* Importo */}
+                    <td style={{ fontFamily:"var(--mono)", fontSize:12,
+                      fontWeight: doc.amount ? 700 : 400,
+                      color: doc.amount ? "var(--text)" : "var(--text3)" }}>
                       {doc.amount || "—"}
                     </td>
+                    {/* Data */}
                     <td><span className="date-text">{doc.date}</span></td>
+                    {/* Scadenza */}
                     <td><DeadlineBadge deadline={doc.deadline} /></td>
                   </tr>
                 );
@@ -3204,9 +3851,9 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
     setSuggestionsLoading(true);
     setAiSuggestions([]);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
@@ -3256,9 +3903,9 @@ const NewCategoryModal = ({ onClose, onConfirm, existingCodes }) => {
     setExamplesLoading(true);
     setAiExamples([]);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 350,
@@ -3779,10 +4426,874 @@ const CatSearch = ({ docs, onSelect }) => {
 /* ─────────────────────────────────────────────
    ROOT APP
 ───────────────────────────────────────────── */
+/* ─────────────────────────────────────────────
+   SEGRETARIO AI
+───────────────────────────────────────────── */
+const SUGGESTED_PROMPTS = [
+  "Quali documenti scadono entro i prossimi 7 giorni?",
+  "Mostrami tutte le PEC non lette",
+  "Quanto devo in totale tra fatture e tributi?",
+  "Ci sono sanzioni o cartelle esattoriali in archivio?",
+  "Riassumi la fattura Enel del mese scorso",
+  "Quali documenti richiedono una mia azione urgente?",
+];
+
+const buildSystemPrompt = () => {
+  const docList = MOCK_DOCS.map(d => {
+    const cat = getCategoryInfo(d.category);
+    return `- [ID:${d.id}] [${d.channel}] "${d.subject}" da ${d.from} — cat: ${cat.label} — data: ${d.date}${d.deadline ? ` — scadenza: ${d.deadline}` : ""}${d.amount ? ` — importo: ${d.amount}` : ""}${d.urgent ? " — URGENTE" : ""}${!d.read ? " — NON LETTO" : ""}${d.managed ? " — archiviato" : ""}`;
+  }).join("\n");
+
+  return `Sei il Segretario AI di A-ESP. Tono professionale ma caldo, in italiano.
+
+Archivio di Mario Rossi (Piano Professional):
+${docList}
+
+RISPOSTA: restituisci SEMPRE e SOLO JSON valido senza markdown:
+{"text":"risposta in italiano con **grassetto** per valori chiave","refs":["1","4","7"]}
+
+"refs" = array degli ID numerici (es. "1","4","7") dei documenti citati. Array vuoto se non ne citi.
+Regole: rispondi in modo umano e conciso. Includi SEMPRE refs per ogni documento che menzioni. Non inventare dati.`;
+};
+
+const SecretaryPage = ({ onDocClick, messages, setMessages }) => {
+  const [input,    setInput]      = useState("");
+  const [loading,  setLoading]    = useState(false);
+  const [apiKey,   setApiKey]     = useState("");
+  const [showKey,  setShowKey]    = useState(false);
+  const bottomRef = useRef(null);
+  const inputRef  = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior:"smooth" });
+  }, [messages, loading]);
+
+  const ts = () => new Date().toLocaleTimeString("it-IT", { hour:"2-digit", minute:"2-digit" });
+
+  const send = async (text) => {
+    const userText = (text || input).trim();
+    if (!userText || loading) return;
+    setInput("");
+
+    const userMsg = { role:"user", text: userText, ts: ts() };
+    const history = [...messages, userMsg];
+    setMessages(history);
+    setLoading(true);
+
+    // Build messages array for the API (exclude system fields)
+    const apiMessages = history.map(m => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: m.text,
+    }));
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 600,
+          system: buildSystemPrompt(),
+          messages: apiMessages,
+        }),
+      });
+      const data = await res.json();
+      const raw = data.content?.map(b => b.text || "").join("") || "{}";
+      let reply = "Non sono riuscito a elaborare la risposta.";
+      let refs  = [];
+      try {
+        const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+        reply = parsed.text || reply;
+        refs  = (parsed.refs || []).map(id => {
+          const clean = String(id).replace(/^ID:/i, "");
+          return MOCK_DOCS.find(d => String(d.id) === clean);
+        }).filter(Boolean);
+      } catch {
+        reply = raw; // fallback: show raw text if not valid JSON
+      }
+      setMessages(prev => [...prev, { role:"assistant", text: reply, refs, ts: ts() }]);
+    } catch {
+      setMessages(prev => [...prev, { role:"assistant", text: "Si è verificato un errore di connessione. Controlla la tua API key e riprova.", ts: ts(), error: true }]);
+    }
+    setLoading(false);
+  };
+
+  const handleKey = e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+
+  // Render message text with basic **bold** support
+  const renderText = (text) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((p, i) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? <strong key={i}>{p.slice(2,-2)}</strong>
+        : <span key={i}>{p}</span>
+    );
+  };
+
+  return (
+    <div className="fade-in" style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 120px)", gap:0 }}>
+
+      {/* ── HEADER ── */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+        <div>
+          <div className="section-title" style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:32, height:32, borderRadius:10, background:"var(--red)",
+              display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <Icon name="secretary" size={16} color="#FEFAEF" />
+            </div>
+            Segretario AI
+          </div>
+          <div className="section-sub">Fai domande sul tuo archivio in linguaggio naturale</div>
+        </div>
+        {/* API key toggle */}
+        <button onClick={() => setShowKey(s => !s)}
+          style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8,
+            padding:"6px 12px", cursor:"pointer", fontSize:11.5, fontWeight:600,
+            color:"var(--text2)", fontFamily:"var(--font)", display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ fontSize:12 }}>🔑</span> API key
+        </button>
+      </div>
+
+      {showKey && (
+        <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:10,
+          padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:11.5, color:"var(--text2)", fontWeight:600, whiteSpace:"nowrap" }}>Anthropic API key:</span>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+            placeholder="sk-ant-..."
+            style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:7,
+              padding:"6px 10px", fontSize:12, fontFamily:"var(--mono)", color:"var(--text)",
+              outline:"none" }} />
+          <span style={{ fontSize:11, color:"var(--text3)" }}>Opzionale — solo browser</span>
+        </div>
+      )}
+
+      {/* ── CHAT WINDOW ── */}
+      <div style={{ flex:1, background:"var(--card)", border:"1px solid var(--border)", borderRadius:14,
+        display:"flex", flexDirection:"column", overflow:"hidden" }}>
+
+        {/* messages */}
+        <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", display:"flex",
+          flexDirection:"column", gap:18 }}>
+
+          {messages.map((m, i) => {
+            const isAI = m.role === "assistant";
+            return (
+              <div key={i} style={{ display:"flex", gap:12,
+                flexDirection: isAI ? "row" : "row-reverse" }}>
+                {/* avatar */}
+                <div style={{ width:34, height:34, borderRadius:10, flexShrink:0,
+                  background: isAI ? "var(--red)" : "var(--surface)",
+                  border: isAI ? "none" : "1px solid var(--border)",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize: isAI ? 0 : 12, fontWeight:700, color:"var(--text2)" }}>
+                  {isAI
+                    ? <Icon name="secretary" size={16} color="#FEFAEF" />
+                    : "MR"}
+                </div>
+                {/* bubble */}
+                <div style={{ maxWidth:"72%", display:"flex", flexDirection:"column",
+                  alignItems: isAI ? "flex-start" : "flex-end", gap:4 }}>
+                  <div style={{
+                    background: isAI ? "var(--surface)" : "var(--red)",
+                    border: isAI ? "1px solid var(--border)" : "none",
+                    borderRadius: isAI ? "4px 14px 14px 14px" : "14px 4px 14px 14px",
+                    padding:"11px 15px", fontSize:13.5, lineHeight:1.6,
+                    color: isAI ? "var(--text)" : "#FEFAEF",
+                    boxShadow: isAI ? "none" : "0 2px 8px rgba(176,32,40,0.25)",
+                    ...(m.error ? { borderColor:"var(--red)", background:"var(--red-soft)", color:"var(--red)" } : {})
+                  }}>
+                    {renderText(m.text)}
+                  </div>
+                  {/* doc reference chips */}
+                  {isAI && m.refs && m.refs.length > 0 && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:4, maxWidth:"100%" }}>
+                      {m.refs.map(doc => {
+                        const cat = getCategoryInfo(doc.category);
+                        return (
+                          <button key={doc.id} onClick={() => onDocClick && onDocClick(doc)}
+                            style={{
+                              display:"flex", alignItems:"center", gap:7,
+                              background:"var(--card)", border:"1px solid var(--border)",
+                              borderLeft:`3px solid ${cat.color}`,
+                              borderRadius:8, padding:"6px 11px",
+                              cursor:"pointer", fontFamily:"var(--font)",
+                              transition:"all 0.15s", textAlign:"left",
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = cat.color; e.currentTarget.style.background = `${cat.color}10`; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.borderLeftColor = cat.color; e.currentTarget.style.background = "var(--card)"; }}
+                          >
+                            <ChannelTag channel={doc.channel} />
+                            <div>
+                              <div style={{ fontSize:11.5, fontWeight:700, color:"var(--text)", maxWidth:220,
+                                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {doc.subject}
+                              </div>
+                              <div style={{ fontSize:10.5, color:"var(--text3)", marginTop:1 }}>
+                                {doc.from} · {doc.date}
+                                {doc.deadline && <span style={{ marginLeft:5, color: daysUntil(doc.deadline) !== null && daysUntil(doc.deadline) <= 7 ? "var(--red)" : "var(--text3)" }}>
+                                  · scade {doc.deadline}
+                                </span>}
+                              </div>
+                            </div>
+                            <span style={{ fontSize:10, color:"var(--text3)", marginLeft:2 }}>↗</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <span style={{ fontSize:10.5, color:"var(--text3)" }}>{m.ts}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* typing indicator */}
+          {loading && (
+            <div style={{ display:"flex", gap:12 }}>
+              <div style={{ width:34, height:34, borderRadius:10, background:"var(--red)",
+                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <Icon name="secretary" size={16} color="#FEFAEF" />
+              </div>
+              <div style={{ background:"var(--surface)", border:"1px solid var(--border)",
+                borderRadius:"4px 14px 14px 14px", padding:"14px 18px", display:"flex", gap:5, alignItems:"center" }}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{ width:7, height:7, borderRadius:"50%", background:"var(--red)",
+                    animation:`bounce 1s ${i*0.18}s infinite`,
+                    opacity:0.7 }} />
+                ))}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* ── SUGGESTED PROMPTS (only at start) ── */}
+        {messages.length === 1 && (
+          <div style={{ padding:"0 20px 14px", borderTop:"1px solid var(--border)" }}>
+            <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+              letterSpacing:"0.7px", padding:"12px 0 8px" }}>Domande suggerite</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {SUGGESTED_PROMPTS.map((p, i) => (
+                <button key={i} onClick={() => send(p)}
+                  style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:20,
+                    padding:"6px 13px", cursor:"pointer", fontSize:12, color:"var(--text2)",
+                    fontFamily:"var(--font)", transition:"all 0.15s", fontWeight:500,
+                    ":hover":{ background:"var(--red-soft)", borderColor:"var(--red)" } }}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── INPUT BAR ── */}
+        <div style={{ padding:"12px 16px", borderTop:"1px solid var(--border)",
+          display:"flex", gap:10, alignItems:"flex-end",
+          background:"var(--card)" }}>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="Scrivi un messaggio… (Invio per inviare, Shift+Invio per andare a capo)"
+            rows={1}
+            style={{ flex:1, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10,
+              padding:"10px 14px", fontSize:13.5, fontFamily:"var(--font)", color:"var(--text)",
+              outline:"none", resize:"none", lineHeight:1.5, maxHeight:120, overflowY:"auto",
+              transition:"border-color 0.15s" }}
+            onFocus={e => e.target.style.borderColor = "var(--red)"}
+            onBlur={e => e.target.style.borderColor = "var(--border)"}
+          />
+          <button onClick={() => send()}
+            disabled={!input.trim() || loading}
+            style={{ background: input.trim() && !loading ? "var(--red)" : "var(--surface)",
+              border:`1px solid ${input.trim() && !loading ? "var(--red)" : "var(--border)"}`,
+              borderRadius:10, width:42, height:42, cursor: input.trim() && !loading ? "pointer" : "default",
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+              transition:"all 0.15s" }}>
+            <svg width={17} height={17} viewBox="0 0 24 24" fill="none"
+              stroke={input.trim() && !loading ? "#FEFAEF" : "var(--text3)"} strokeWidth="2.2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2" fill={input.trim() && !loading ? "#FEFAEF" : "none"}/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes bounce {
+          0%,80%,100% { transform:translateY(0); }
+          40% { transform:translateY(-6px); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────
+   PROFILE PAGE
+───────────────────────────────────────────── */
+/* ─────────────────────────────────────────────
+   ACCOUNT PAGE
+───────────────────────────────────────────── */
+const AccountPage = ({ onClose }) => {
+  const [tab, setTab] = useState("profilo");
+  const [saved, setSaved] = useState(false);
+
+  const tabs = [
+    { key:"profilo",      label:"Profilo" },
+    { key:"piano",        label:"Piano & Fatturazione" },
+    { key:"sicurezza",    label:"Sicurezza" },
+    { key:"notifiche",    label:"Notifiche" },
+    { key:"integrazioni", label:"Integrazioni" },
+  ];
+
+  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  const Field = ({ label, value, type="text", hint }) => (
+    <div style={{ marginBottom:16 }}>
+      <label style={{ display:"block", fontSize:11.5, fontWeight:700, color:"var(--text2)",
+        marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px" }}>{label}</label>
+      <input defaultValue={value} type={type}
+        style={{ width:"100%", background:"var(--surface)", border:"1px solid var(--border)",
+          borderRadius:8, padding:"9px 12px", fontSize:13, color:"var(--text)",
+          fontFamily:"var(--font)", outline:"none", boxSizing:"border-box",
+          transition:"border-color 0.15s" }}
+        onFocus={e => e.target.style.borderColor="var(--red)"}
+        onBlur={e => e.target.style.borderColor="var(--border)"} />
+      {hint && <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>{hint}</div>}
+    </div>
+  );
+
+  const Toggle = ({ label, sub, defaultOn }) => {
+    const [on, setOn] = useState(defaultOn);
+    return (
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"12px 0", borderBottom:"1px solid var(--border)" }}>
+        <div>
+          <div style={{ fontSize:13, fontWeight:600, color:"var(--text)" }}>{label}</div>
+          {sub && <div style={{ fontSize:11.5, color:"var(--text3)", marginTop:2 }}>{sub}</div>}
+        </div>
+        <div onClick={() => setOn(v => !v)} style={{
+          width:40, height:22, borderRadius:99, background: on ? "var(--red)" : "var(--border)",
+          cursor:"pointer", position:"relative", transition:"background 0.2s", flexShrink:0
+        }}>
+          <div style={{ position:"absolute", top:3, left: on ? 20 : 3, width:16, height:16,
+            borderRadius:"50%", background:"#fff", transition:"left 0.2s",
+            boxShadow:"0 1px 4px rgba(0,0,0,0.2)" }} />
+        </div>
+      </div>
+    );
+  };
+
+  const content = {
+    profilo: (
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:24,
+          padding:"16px", background:"var(--surface)", borderRadius:10, border:"1px solid var(--border)" }}>
+          <div style={{ width:60, height:60, borderRadius:16, background:"var(--red)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:20, fontWeight:800, color:"#FEFAEF", flexShrink:0 }}>MR</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:"var(--text)" }}>Mario Rossi</div>
+            <div style={{ fontSize:12, color:"var(--text3)" }}>mario.rossi@gmail.com</div>
+          </div>
+          <button style={{ background:"var(--red-soft)", border:"1px solid var(--red)",
+            borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:11.5,
+            fontWeight:700, color:"var(--red)", fontFamily:"var(--font)" }}>
+            Cambia foto
+          </button>
+        </div>
+        <Field label="Nome" value="Mario" />
+        <Field label="Cognome" value="Rossi" />
+        <Field label="Email" value="mario.rossi@gmail.com" type="email" />
+        <Field label="Telefono" value="+39 333 1234567" type="tel" />
+        <Field label="Partita IVA / Codice Fiscale" value="RSSMRA80A01F205X"
+          hint="Utilizzato per la fatturazione e la compliance normativa" />
+        <Field label="Professione" value="Commercialista" />
+      </div>
+    ),
+
+    piano: (
+      <div>
+        <div style={{ background:"var(--red)", borderRadius:12, padding:"18px 20px", marginBottom:20, color:"#FEFAEF" }}>
+          <div style={{ fontSize:11, fontWeight:700, opacity:0.75, textTransform:"uppercase", letterSpacing:"0.6px", marginBottom:4 }}>Piano attivo</div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+            <div style={{ fontSize:22, fontWeight:800, marginBottom:2 }}>★★ Professional</div>
+            <span style={{ fontSize:11, fontWeight:700, background:"rgba(255,255,255,0.2)", borderRadius:4, padding:"1px 8px" }}>Best Value</span>
+          </div>
+          <div style={{ fontSize:12, opacity:0.8, marginTop:2 }}>Rinnovo il 1 aprile 2026 · €14,99/mese · oppure €149,99/anno</div>
+          <div style={{ marginTop:10, display:"flex", gap:8 }}>
+            <button style={{ background:"rgba(255,255,255,0.2)", border:"1px solid rgba(255,255,255,0.3)",
+              borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11, fontWeight:700,
+              color:"#FEFAEF", fontFamily:"var(--font)" }}>Passa ad annuale →</button>
+            <button style={{ background:"none", border:"1px solid rgba(255,255,255,0.25)",
+              borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:11,
+              color:"rgba(255,255,255,0.7)", fontFamily:"var(--font)" }}>Disdici</button>
+          </div>
+        </div>
+        {[
+          {
+            label:"Free", star:"", tag:null,
+            price:"€ 0", annual:null,
+            features:[
+              "20 email analizzate/giorno",
+              "1 casella email",
+              "Archivio 30 giorni",
+              "Supporto community",
+            ],
+            missing:["PEC","Notifiche urgenti","Ricerca AI","Dashboard"],
+          },
+          {
+            label:"Personal", star:"★", tag:"Core",
+            price:"€ 7,99/mese", annual:"€ 79,99/anno  (risparmi €16)",
+            features:[
+              "Email illimitate",
+              "2 caselle email",
+              "1 casella PEC",
+              "Archivio 1 anno",
+              "Notifiche urgenti SMS/push",
+              "Ricerca semantica AI basica",
+              "Dashboard base",
+              "Supporto email",
+            ],
+            missing:["API access"],
+          },
+          {
+            label:"Professional", star:"★★", tag:"Best Value",
+            price:"€ 14,99/mese", annual:"€ 149,99/anno  (risparmi €30)",
+            current:true,
+            features:[
+              "Email illimitate",
+              "5 caselle email",
+              "3 caselle PEC",
+              "Archivio 5 anni",
+              "Notifiche urgenti + priorità",
+              "Ricerca semantica AI avanzata",
+              "Dashboard completa",
+              "Supporto email prioritario",
+            ],
+            missing:["API access"],
+          },
+          {
+            label:"Business", star:"★★★", tag:"PMI",
+            price:"€ 39,99/mese", annual:"€ 399,99/anno  (risparmi €80)",
+            features:[
+              "Email illimitate",
+              "Caselle email illimitate",
+              "PEC illimitate",
+              "Archivio 10 anni",
+              "Notifiche multi-destinatario",
+              "Ricerca AI avanzata + API",
+              "Dashboard + export dati",
+              "REST API access",
+              "Supporto Chat + SLA garantito",
+            ],
+            missing:[],
+          },
+        ].map(p => (
+          <div key={p.label} style={{ border:`2px solid ${p.current ? "var(--red)" : "var(--border)"}`,
+            borderRadius:10, padding:"14px 16px", marginBottom:10,
+            background: p.current ? "var(--red-soft)" : "var(--surface)" }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:6 }}>
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:14, fontWeight:800, color: p.current ? "var(--red)" : "var(--text)" }}>
+                    {p.star} Piano {p.label}
+                  </span>
+                  {p.tag && <span style={{ fontSize:10, background: p.current ? "var(--red)" : "var(--border)",
+                    color: p.current ? "#FEFAEF" : "var(--text3)",
+                    borderRadius:4, padding:"1px 7px", fontWeight:700 }}>{p.tag}</span>}
+                  {p.current && <span style={{ fontSize:10, background:"var(--red)", color:"#FEFAEF",
+                    borderRadius:4, padding:"1px 7px", fontWeight:700 }}>ATTIVO</span>}
+                </div>
+                <div style={{ fontSize:13, fontWeight:700, color:"var(--text)", marginTop:4 }}>{p.price}</div>
+                {p.annual && <div style={{ fontSize:11, color:"var(--teal)", marginTop:1 }}>📅 {p.annual}</div>}
+              </div>
+            </div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginTop:8 }}>
+              {p.features.map(f => (
+                <span key={f} style={{ fontSize:11, color:"var(--text)", background:"var(--card)",
+                  border:"1px solid var(--border)", borderRadius:4, padding:"2px 8px" }}>✓ {f}</span>
+              ))}
+              {p.missing && p.missing.map(f => (
+                <span key={f} style={{ fontSize:11, color:"var(--text3)", background:"var(--surface)",
+                  border:"1px solid var(--border)", borderRadius:4, padding:"2px 8px", opacity:0.6 }}>✗ {f}</span>
+              ))}
+            </div>
+            {!p.current && (
+              <button style={{ marginTop:10, background:"none", border:"1px solid var(--border)",
+                borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:11.5,
+                fontWeight:600, color:"var(--text2)", fontFamily:"var(--font)" }}>
+                Passa a questo piano →
+              </button>
+            )}
+          </div>
+        ))}
+        <div style={{ marginTop:16, padding:"14px 16px", background:"var(--surface)",
+          border:"1px solid var(--border)", borderRadius:10 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:8 }}>Storico fatture</div>
+          {[["Mar 2026","€ 9,90","Pagata"],["Feb 2026","€ 9,90","Pagata"],["Gen 2026","€ 9,90","Pagata"]].map(([d,a,s]) => (
+            <div key={d} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0",
+              borderBottom:"1px solid var(--border)", fontSize:12 }}>
+              <span style={{ color:"var(--text2)" }}>{d}</span>
+              <span style={{ fontWeight:700, color:"var(--text)" }}>{a}</span>
+              <span style={{ color:"var(--teal)", fontWeight:600 }}>{s}</span>
+              <span style={{ color:"var(--red)", cursor:"pointer", fontWeight:600 }}>↓ PDF</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+
+    sicurezza: (
+      <div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:12 }}>Password</div>
+          <Field label="Password attuale" value="" type="password" />
+          <Field label="Nuova password" value="" type="password" hint="Minimo 8 caratteri, una maiuscola, un numero" />
+          <Field label="Conferma nuova password" value="" type="password" />
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:8 }}>Autenticazione a due fattori</div>
+          <Toggle label="Abilita 2FA" sub="Richiedi un codice OTP al login" defaultOn={false} />
+        </div>
+        <div>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:8 }}>Sessioni attive</div>
+          {[
+            { dev:"Chrome · macOS", loc:"Milano, IT", time:"Ora", current:true },
+            { dev:"Safari · iPhone", loc:"Milano, IT", time:"2 ore fa" },
+          ].map((s,i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)",
+              borderRadius:8, marginBottom:8 }}>
+              <div>
+                <div style={{ fontSize:12.5, fontWeight:600, color:"var(--text)" }}>{s.dev}</div>
+                <div style={{ fontSize:11, color:"var(--text3)" }}>{s.loc} · {s.time}</div>
+              </div>
+              {s.current
+                ? <span style={{ fontSize:10.5, fontWeight:700, color:"var(--teal)" }}>Sessione attuale</span>
+                : <button style={{ background:"none", border:"1px solid var(--border)", borderRadius:6,
+                    padding:"3px 10px", cursor:"pointer", fontSize:11, color:"var(--text3)",
+                    fontFamily:"var(--font)" }}>Revoca</button>}
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop:20, padding:"14px 16px", background:"rgba(176,32,40,0.06)",
+          border:"1px solid rgba(176,32,40,0.2)", borderRadius:10 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--red)", marginBottom:4 }}>Zona pericolosa</div>
+          <div style={{ fontSize:12, color:"var(--text3)", marginBottom:10 }}>
+            L'eliminazione dell'account è irreversibile. Tutti i dati verranno cancellati.
+          </div>
+          <button style={{ background:"none", border:"1px solid var(--red)", borderRadius:7,
+            padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:700,
+            color:"var(--red)", fontFamily:"var(--font)" }}>
+            Elimina account
+          </button>
+        </div>
+      </div>
+    ),
+
+    notifiche: (
+      <div>
+        <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", marginBottom:4 }}>Alerting documenti</div>
+        <div style={{ fontSize:11.5, color:"var(--text3)", marginBottom:14 }}>Scegli quando e come ricevere avvisi</div>
+        <Toggle label="Nuova PEC ricevuta"          sub="Alert immediato per ogni PEC in arrivo" defaultOn={true} />
+        <Toggle label="Documento urgente rilevato"  sub="Notifica push quando l'AI identifica urgenza" defaultOn={true} />
+        <Toggle label="Scadenza entro 7 giorni"     sub="Reminder giornaliero per scadenze imminenti" defaultOn={true} />
+        <Toggle label="Scadenza entro 30 giorni"    sub="Digest settimanale delle scadenze" defaultOn={false} />
+        <Toggle label="Nuovo documento archiviato"  sub="Conferma ogni archiviazione automatica" defaultOn={false} />
+        <div style={{ fontSize:12, fontWeight:700, color:"var(--text)", margin:"20px 0 4px" }}>Canale di notifica</div>
+        <Toggle label="Notifiche email"      sub="Invia riepilogo a mario.rossi@gmail.com" defaultOn={true} />
+        <Toggle label="Notifiche push"       sub="Notifiche browser in tempo reale" defaultOn={true} />
+        <Toggle label="Digest settimanale"   sub="Riepilogo domenicale dell'archivio" defaultOn={false} />
+      </div>
+    ),
+
+    integrazioni: (
+      <div>
+        {[
+          { name:"Gmail",        icon:"G", color:"#E02834", connected:true,  addr:"mario.rossi@gmail.com",  sync:"2 min fa" },
+          { name:"PEC Aruba",    icon:"P", color:"var(--red)", connected:true,  addr:"m.rossi@pec.it",      sync:"5 min fa" },
+          { name:"Outlook",      icon:"O", color:"#8A3040", connected:false, addr:null, sync:null },
+          { name:"PEC Legalmail",icon:"L", color:"#C03040", connected:false, addr:null, sync:null },
+          { name:"REM / QeRDS",  icon:"R", color:"var(--blue)", connected:false, addr:null, sync:null },
+        ].map(({ name, icon, color, connected, addr, sync }) => (
+          <div key={name} style={{ display:"flex", alignItems:"center", gap:12,
+            padding:"12px 14px", background:"var(--surface)", border:"1px solid var(--border)",
+            borderRadius:10, marginBottom:10 }}>
+            <div style={{ width:36, height:36, borderRadius:9, flexShrink:0,
+              background: connected ? color : "var(--surface)",
+              border:`1px solid ${connected ? color : "var(--border)"}`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:13, fontWeight:800, color: connected ? "#FEFAEF" : "var(--text3)" }}>{icon}</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--text)" }}>{name}</div>
+              <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>
+                {connected ? `${addr} · Sync ${sync}` : "Non collegato"}
+              </div>
+            </div>
+            <button style={{
+              background: connected ? "none" : "var(--red-soft)",
+              border:`1px solid ${connected ? "var(--border)" : "var(--red)"}`,
+              borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:11.5, fontWeight:700,
+              color: connected ? "var(--text3)" : "var(--red)", fontFamily:"var(--font)" }}>
+              {connected ? "Scollega" : "Collega →"}
+            </button>
+          </div>
+        ))}
+      </div>
+    ),
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:600, background:"rgba(0,0,0,0.5)",
+      backdropFilter:"blur(4px)", display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:640, maxHeight:"88vh", background:"var(--card)",
+        border:"1px solid var(--border)", borderRadius:16,
+        boxShadow:"0 24px 64px rgba(0,0,0,0.25)",
+        display:"flex", flexDirection:"column", overflow:"hidden",
+        animation:"popIn 0.2s ease"
+      }}>
+        <style>{`@keyframes popIn { from { transform:scale(0.96); opacity:0; } to { transform:scale(1); opacity:1; } }`}</style>
+
+        {/* header */}
+        <div style={{ padding:"20px 24px 0", borderBottom:"1px solid var(--border)" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+            <div style={{ fontSize:16, fontWeight:800, color:"var(--text)" }}>Gestisci account</div>
+            <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer",
+              color:"var(--text3)", fontSize:20, lineHeight:1, fontFamily:"var(--font)" }}>✕</button>
+          </div>
+          <div style={{ display:"flex", gap:2 }}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                style={{ background:"none", border:"none", padding:"8px 14px", cursor:"pointer",
+                  fontSize:12.5, fontWeight: tab===t.key ? 700 : 500,
+                  color: tab===t.key ? "var(--red)" : "var(--text3)",
+                  borderBottom: `2px solid ${tab===t.key ? "var(--red)" : "transparent"}`,
+                  fontFamily:"var(--font)", transition:"all 0.15s", marginBottom:-1 }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* body */}
+        <div style={{ flex:1, overflowY:"auto", padding:"22px 24px" }}>
+          {content[tab]}
+        </div>
+
+        {/* footer */}
+        {["profilo","sicurezza","notifiche"].includes(tab) && (
+          <div style={{ padding:"14px 24px", borderTop:"1px solid var(--border)",
+            display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10 }}>
+            {saved && <span style={{ fontSize:12, color:"var(--teal)", fontWeight:600 }}>✓ Salvato</span>}
+            <button onClick={onClose} style={{ background:"var(--surface)", border:"1px solid var(--border)",
+              borderRadius:8, padding:"8px 18px", cursor:"pointer", fontSize:12.5,
+              fontWeight:600, color:"var(--text2)", fontFamily:"var(--font)" }}>Annulla</button>
+            <button onClick={save} style={{ background:"var(--red)", border:"none",
+              borderRadius:8, padding:"8px 20px", cursor:"pointer", fontSize:12.5,
+              fontWeight:700, color:"#FEFAEF", fontFamily:"var(--font)" }}>Salva modifiche</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ProfilePage = ({ onClose, onManageAccount }) => {
+  const totalDocs   = MOCK_DOCS.length;
+  const unread      = MOCK_DOCS.filter(d => !d.read).length;
+  const urgent      = MOCK_DOCS.filter(d => d.urgent).length;
+  const managed     = MOCK_DOCS.filter(d => d.managed).length;
+  const riskDocs    = MOCK_DOCS.filter(d => d.amount);
+  const totalRisk   = riskDocs.reduce((s, d) => s + parseFloat(d.amount.replace(/[^0-9,.]/g,"").replace(",",".")), 0);
+  const expiring30  = MOCK_DOCS.filter(d => { const v = daysUntil(d.deadline); return v !== null && v >= 0 && v <= 30; }).length;
+
+  const byChannel = ["EMAIL","PEC","REM"].map(ch => ({
+    label: ch, value: MOCK_DOCS.filter(d => d.channel === ch).length,
+    color: ch==="PEC" ? "var(--red)" : ch==="REM" ? "var(--blue)" : "var(--teal)"
+  }));
+
+  const PLAN_FEATURES = [
+    { label:"Caselle collegate", value:"Illimitate", ok:true },
+    { label:"Archiviazione documenti", value:"50 GB", ok:true },
+    { label:"Segretario AI", value:"Incluso", ok:true },
+    { label:"Conservazione a norma", value:"Prossimamente", ok:false },
+    { label:"Supporto prioritario", value:"Incluso", ok:true },
+    { label:"API access", value:"Non incluso", ok:false },
+  ];
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:500,
+      background:"rgba(0,0,0,0.45)", backdropFilter:"blur(3px)",
+      display:"flex", alignItems:"flex-end", justifyContent:"flex-start",
+      padding:"0 0 0 0"
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width:420, height:"100vh", background:"var(--card)",
+        borderRight:"1px solid var(--border)",
+        boxShadow:"8px 0 40px rgba(0,0,0,0.2)",
+        display:"flex", flexDirection:"column", overflow:"hidden",
+        animation:"slideInLeft 0.22s ease"
+      }}>
+        <style>{`@keyframes slideInLeft { from { transform:translateX(-30px); opacity:0; } to { transform:translateX(0); opacity:1; } }`}</style>
+
+        {/* ── HEADER ── */}
+        <div style={{ padding:"28px 24px 20px", borderBottom:"1px solid var(--border)",
+          background:"var(--surface)" }}>
+          <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+              <div style={{ width:56, height:56, borderRadius:16, background:"var(--red)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:18, fontWeight:800, color:"#FEFAEF", letterSpacing:1, flexShrink:0 }}>MR</div>
+              <div>
+                <div style={{ fontSize:18, fontWeight:800, color:"var(--text)", lineHeight:1.2 }}>Mario Rossi</div>
+                <div style={{ fontSize:12, color:"var(--text3)", marginTop:3 }}>mario.rossi@gmail.com</div>
+                <div style={{ marginTop:7, display:"inline-flex", alignItems:"center", gap:6,
+                  background:"var(--red)", borderRadius:20, padding:"3px 10px" }}>
+                  <div style={{ width:6, height:6, borderRadius:"50%", background:"#FEFAEF", opacity:0.8 }} />
+                  <span style={{ fontSize:11, fontWeight:700, color:"#FEFAEF", letterSpacing:"0.3px" }}>Piano Professional</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer",
+              color:"var(--text3)", fontSize:20, lineHeight:1, padding:4, fontFamily:"var(--font)" }}>✕</button>
+          </div>
+        </div>
+
+        {/* ── BODY (scrollable) ── */}
+        <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", display:"flex", flexDirection:"column", gap:20 }}>
+
+          {/* Stats grid */}
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+              letterSpacing:"0.8px", marginBottom:10 }}>Riepilogo archivio</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {[
+                { label:"Documenti totali", value:totalDocs, color:"var(--text)" },
+                { label:"Non letti",         value:unread,   color:"var(--red)" },
+                { label:"Urgenti",           value:urgent,   color:"var(--red)" },
+                { label:"Gestiti",           value:managed,  color:"var(--teal)" },
+                { label:"In scadenza 30gg",  value:expiring30, color:"var(--amber)" },
+                { label:"Rischio esposto",   value:`€ ${Math.round(totalRisk).toLocaleString("it-IT")}`, color:"var(--blue)" },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ background:"var(--surface)", border:"1px solid var(--border)",
+                  borderRadius:10, padding:"12px 14px" }}>
+                  <div style={{ fontSize:10, color:"var(--text3)", fontWeight:600, marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:20, fontWeight:800, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Canali */}
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+              letterSpacing:"0.8px", marginBottom:10 }}>Documenti per canale</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {byChannel.map(({ label, value, color }) => {
+                const pct = Math.round((value / totalDocs) * 100);
+                return (
+                  <div key={label} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:11, fontWeight:700, color, width:44 }}>{label}</span>
+                    <div style={{ flex:1, background:"var(--border)", borderRadius:99, height:7, overflow:"hidden" }}>
+                      <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:99,
+                        transition:"width 0.6s ease" }} />
+                    </div>
+                    <span style={{ fontSize:11, color:"var(--text2)", fontWeight:600, width:24, textAlign:"right" }}>{value}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Piano */}
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+              letterSpacing:"0.8px", marginBottom:10 }}>Piano Professional — funzionalità</div>
+            <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden" }}>
+              {PLAN_FEATURES.map(({ label, value, ok }, i) => (
+                <div key={label} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                  padding:"10px 14px",
+                  borderBottom: i < PLAN_FEATURES.length-1 ? "1px solid var(--border)" : "none" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ fontSize:13, lineHeight:1 }}>{ok ? "✓" : "·"}</span>
+                    <span style={{ fontSize:12.5, color: ok ? "var(--text)" : "var(--text3)" }}>{label}</span>
+                  </div>
+                  <span style={{ fontSize:11.5, fontWeight:600,
+                    color: ok ? "var(--red)" : "var(--text3)" }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Caselle collegate */}
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text3)", textTransform:"uppercase",
+              letterSpacing:"0.8px", marginBottom:10 }}>Caselle collegate</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {[
+                { label:"Gmail",      addr:"mario.rossi@gmail.com", ok:true,  icon:"G", color:"#E02834" },
+                { label:"PEC Aruba",  addr:"m.rossi@pec.it",        ok:true,  icon:"P", color:"var(--red)" },
+                { label:"Outlook",    addr:"Non collegato",          ok:false, icon:"O", color:"var(--text3)" },
+                { label:"REM/QeRDS",  addr:"Non collegato",          ok:false, icon:"R", color:"var(--text3)" },
+              ].map(({ label, addr, ok, icon, color }) => (
+                <div key={label} style={{ display:"flex", alignItems:"center", gap:10,
+                  background:"var(--surface)", border:"1px solid var(--border)", borderRadius:9, padding:"9px 12px" }}>
+                  <div style={{ width:28, height:28, borderRadius:7, background:ok ? color : "var(--surface)",
+                    border:`1px solid ${ok ? color : "var(--border)"}`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:11, fontWeight:800, color:ok ? "#FEFAEF" : "var(--text3)", flexShrink:0 }}>{icon}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:"var(--text)" }}>{label}</div>
+                    <div style={{ fontSize:11, color:"var(--text3)", marginTop:1 }}>{addr}</div>
+                  </div>
+                  <div style={{ width:8, height:8, borderRadius:"50%",
+                    background: ok ? "var(--teal)" : "var(--border)" }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── FOOTER ── */}
+        <div style={{ padding:"14px 24px", borderTop:"1px solid var(--border)", display:"flex", gap:8 }}>
+          <button onClick={onManageAccount} style={{ flex:1, background:"var(--red-soft)", border:"1px solid var(--red)",
+            borderRadius:8, padding:"9px", cursor:"pointer", fontSize:12.5, fontWeight:700,
+            color:"var(--red)", fontFamily:"var(--font)" }}>
+            Gestisci account
+          </button>
+          <button onClick={onClose} style={{ background:"var(--surface)", border:"1px solid var(--border)",
+            borderRadius:8, padding:"9px 16px", cursor:"pointer", fontSize:12.5, fontWeight:600,
+            color:"var(--text2)", fontFamily:"var(--font)" }}>
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [page, setPage]           = useState("dashboard");
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: "assistant",
+      text: "Ciao Mario! Sono il tuo **Segretario AI**. Posso aiutarti a trovare documenti, controllare scadenze, capire il tuo stato finanziario o rispondere a qualsiasi domanda sul tuo archivio. Come posso esserti utile oggi?",
+      ts: new Date().toLocaleTimeString("it-IT", { hour:"2-digit", minute:"2-digit" }),
+    }
+  ]);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [showNotif, setShowNotif] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [allDocs, setAllDocs]     = useState(MOCK_DOCS);
 
@@ -3799,7 +5310,7 @@ export default function App() {
     { key: "connections", label: "Connessioni", icon: "link" },
   ];
 
-  const pageTitles = { dashboard: "Panoramica", inbox: "Inbox", archive: "Archivio", alerts: "Scadenze", connections: "Connessioni", calendar: "Calendario Scadenze" };
+  const pageTitles = { dashboard: "Panoramica", inbox: "Inbox", archive: "Archivio", alerts: "Scadenze", connections: "Connessioni", calendar: "Calendario Scadenze", secretary: "Segretario AI" };
 
   return (
     <>
@@ -3825,13 +5336,22 @@ export default function App() {
             ))}
 
             <div className="nav-section" style={{ marginTop: 12 }}>AI & Configurazione</div>
+            <div className={`nav-item ${page === "secretary" ? "active" : ""}`} onClick={() => setPage("secretary")}>
+              <span className="nav-icon"><Icon name="secretary" size={15} color={page === "secretary" ? "var(--red)" : "currentColor"} /></span>
+              <span className="nav-item-label">Segretario AI</span>
+              <span style={{ marginLeft:"auto", fontSize:9, fontWeight:800, background:"var(--red)", color:"#FEFAEF",
+                borderRadius:4, padding:"1px 5px", letterSpacing:"0.4px" }} className="nav-badge">AI</span>
+            </div>
             <div className={`nav-item ${page === "settings" ? "active" : ""}`} onClick={() => setPage("settings")}>
               <span className="nav-icon"><Icon name="settings" size={15} color={page === "settings" ? "var(--red)" : "currentColor"} /></span>
               <span className="nav-item-label">Impostazioni</span>
             </div>
           </div>
           <div className="sidebar-footer">
-            <div className="user-pill">
+            <div className="user-pill" onClick={() => setShowProfile(true)}
+              style={{ cursor:"pointer", transition:"background 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background="var(--surface)"}
+              onMouseLeave={e => e.currentTarget.style.background=""}>
               <div className="user-avatar">MR</div>
               <div>
                 <div className="user-name">Mario Rossi</div>
@@ -3867,6 +5387,7 @@ export default function App() {
             {page === "alerts" && <Alerts onDocClick={setSelectedDoc} />}
             {page === "connections" && <Connections />}
             {page === "calendar" && <CalendarPage onDocClick={setSelectedDoc} />}
+            {page === "secretary" && <SecretaryPage onDocClick={setSelectedDoc} messages={chatMessages} setMessages={setChatMessages} />}
             {page === "settings" && (
               <div className="fade-in">
                 <div className="section-title" style={{ marginBottom: 16 }}>Impostazioni</div>
@@ -3881,9 +5402,9 @@ export default function App() {
 
         {/* NOTIFICATIONS */}
         {showNotif && <NotificationPanel onClose={() => setShowNotif(false)} onDocClick={doc => { setSelectedDoc(doc); setShowNotif(false); }} />}
-
-        {/* DRAWER */}
         {selectedDoc && <DocDrawer doc={selectedDoc} onClose={() => setSelectedDoc(null)} />}
+        {showProfile && <ProfilePage onClose={() => setShowProfile(false)} onManageAccount={() => { setShowProfile(false); setShowAccount(true); }} />}
+        {showAccount && <AccountPage onClose={() => setShowAccount(false)} />}
       </div>
     </>
   );
